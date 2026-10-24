@@ -1,22 +1,53 @@
 *{box-sizing:border-box}
-body{margin:0;font:14px/1.4 system-ui,sans-serif;color:#1f2937;background:#f3f4f6;height:100vh;display:flex;flex-direction:column}
-header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:#fff;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}
+body{
+  margin:0;
+  font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+  color:#1f2937;
+  background:#f3f4f6;
+  min-height:100vh;
+  min-height:100dvh;
+  display:flex;
+  flex-direction:column;
+  -webkit-tap-highlight-color:transparent;
+}
+
+header{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  padding:8px 12px;
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  flex-wrap:wrap;
+}
 h1{font-size:17px;margin:0 12px 0 0}
-button,select{font:inherit;padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer}
+button,select{
+  font:inherit;
+  padding:6px 10px;
+  border:1px solid #d1d5db;
+  border-radius:8px;
+  background:#fff;
+  cursor:pointer;
+  touch-action:manipulation;
+}
 button:hover:not(:disabled){background:#eef2ff}
 button:disabled{opacity:.45;cursor:not-allowed}
 button.primary{background:#4f46e5;color:#fff;border-color:#4f46e5}
 button.primary:hover{background:#4338ca}
+
 main{flex:1;display:flex;min-height:0}
 #tools{flex:none;width:150px;padding:8px;background:#fff;border-right:1px solid #e5e7eb;overflow:auto}
 #panel{flex:none;width:360px;padding:10px;background:#fff;border-left:1px solid #e5e7eb;overflow:auto}
+
 .grp{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;margin-bottom:8px}
 .grp button{height:38px;padding:2px;font-weight:700;font-size:15px}
 .grp button.on{background:#e0e7ff;border-color:#6366f1}
 .grp svg{width:22px;height:22px;stroke:#222;stroke-width:2;fill:none}
 #status{margin-top:8px;font-size:12px;color:#6b7280}
+
 #stage{flex:1;position:relative;min-width:0}
 #ed{position:absolute;inset:0;width:100%;height:100%;background:#fff;cursor:crosshair;touch-action:none}
+
 nav{display:flex;gap:6px;margin-bottom:10px}
 .tab.on{background:#e0e7ff;border-color:#6366f1}
 #panel>div>button{width:100%;margin-bottom:6px}
@@ -32,7 +63,7 @@ nav{display:flex;gap:6px;margin-bottom:10px}
 #v3{width:100%;height:340px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;margin:8px 0;touch-action:none;cursor:grab}
 .row3{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .hint{font-size:12px;color:#6b7280}
-@media(max-width:900px){main{flex-direction:column}#tools,#panel{width:100%!important}#stage{min-height:420px}.split{display:none}}
+
 .split{flex:none;width:7px;cursor:col-resize;background:#e5e7eb;position:relative;touch-action:none}
 .split::after{content:"";position:absolute;left:2px;top:50%;width:3px;height:36px;margin-top:-18px;border-radius:2px;background:#9ca3af}
 .split:hover,.split.drag{background:#c7d2fe}
@@ -44,3 +75,86 @@ nav{display:flex;gap:6px;margin-bottom:10px}
 .prow input{width:46px;padding:2px 4px;border:1px solid #d1d5db;border-radius:8px;font:inherit;font-size:12px}
 .grp.small button{font-size:11px;font-weight:600;padding:2px;height:34px;overflow:hidden}
 .chip.dpn{background:#64748b}.chip.dpw{background:#d97706}.chip.dpp{background:#2563eb}.chip.dps{background:#7c3aed}
+
+/* ---------- Smartphone & Touch Screen Adaptations ---------- */
+@media (max-width: 900px) {
+  body {
+    height: auto;
+    overflow-x: hidden;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 8px;
+    gap: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+  header h1 {
+    font-size: 15px;
+    margin-right: 6px;
+  }
+  header button, header select {
+    padding: 6px 10px;
+    font-size: 13px;
+    min-height: 38px;
+  }
+  main {
+    flex-direction: column;
+    overflow: visible;
+  }
+  .split {
+    display: none !important;
+  }
+
+  /* 1. Tool shelf placed above the canvas with compact scroll */
+  #tools {
+    order: 1;
+    width: 100% !important;
+    max-height: 190px;
+    overflow-y: auto;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 8px 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+  #tools .grp {
+    grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+    gap: 4px;
+  }
+  #tools .grp button {
+    height: 40px;
+    min-width: 40px;
+    font-size: 14px;
+  }
+  #tools .prow button, #tools .grp.small button {
+    height: 38px;
+  }
+
+  /* 2. Primary 2D Canvas stage */
+  #stage {
+    order: 2;
+    width: 100%;
+    height: 55vh;
+    min-height: 340px;
+    position: relative;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  /* 3. Analysis & 3D tab panel below */
+  #panel {
+    order: 3;
+    width: 100% !important;
+    border-left: none;
+    padding: 14px 12px;
+  }
+  #v3 {
+    height: 280px;
+  }
+  #panel nav button {
+    flex: 1;
+    min-height: 42px;
+  }
+}

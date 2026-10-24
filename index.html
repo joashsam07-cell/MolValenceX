@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Molecule Studio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>⬡ Molecule Studio <span style="font-size:12px;font-weight:400;color:#6b7280">by Joash Sam</span></h1>
+  <select id="examples"><option value="">Load example…</option></select>
+  <button id="undo" title="Ctrl+Z">↶ Undo</button>
+  <button id="redo" title="Ctrl+Y">↷ Redo</button>
+  <button id="clean">Clean up</button>
+  <button id="clear">Clear</button>
+  <button id="expmol">Export MOL</button>
+</header>
+<main>
+  <aside id="tools">
+    <div class="grp" id="bondtools">
+      <button data-tool="select" title="Select / move (drag atom, drag empty = pan)">⇱</button>
+      <button data-tool="bond" data-o="1" data-s="0" class="on" title="Single bond (1)"><svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"/></svg></button>
+      <button data-tool="bond" data-o="2" data-s="0" title="Double bond (2)"><svg viewBox="0 0 24 24"><line x1="2" y1="17" x2="17" y2="2"/><line x1="7" y1="22" x2="22" y2="7"/></svg></button>
+      <button data-tool="bond" data-o="3" data-s="0" title="Triple bond (3)"><svg viewBox="0 0 24 24"><line x1="1" y1="15" x2="15" y2="1"/><line x1="5" y1="19" x2="19" y2="5"/><line x1="9" y1="23" x2="23" y2="9"/></svg></button>
+      <button data-tool="bond" data-o="1" data-s="1" title="Wedge (towards you)"><svg viewBox="0 0 24 24"><polygon points="4,20 20,4 22,8" fill="#222"/></svg></button>
+      <button data-tool="bond" data-o="1" data-s="2" title="Dash (away from you)"><svg viewBox="0 0 24 24"><line x1="5" y1="19" x2="6" y2="18"/><line x1="8" y1="16" x2="10" y2="14"/><line x1="11" y1="13" x2="14" y2="10"/><line x1="14" y1="9" x2="18" y2="5"/></svg></button>
+      <button data-tool="erase" title="Eraser (Del)">⌫</button>
+      <button data-tool="chg+" title="Add + charge">+</button>
+      <button data-tool="chg-" title="Add − charge">−</button>
+    </div>
+    <div class="grp" id="elements"></div>
+    <select id="more"><option value="">More…</option></select>
+    <div class="sect">Presets</div>
+    <div class="hintsm">Pick one, then click the canvas to place it, an atom to attach it, or a bond to fuse a ring onto it.</div>
+    <div class="prow"><button class="pre" data-p="alkane" title="Straight chain of n carbons">n-Alkane</button><input id="n-alk" type="number" min="1" max="30" value="4" title="n = number of carbons"></div>
+    <div class="prow"><button class="pre" data-p="cyclo" title="Ring of n carbons">Cycloalkane</button><input id="n-cyc" type="number" min="3" max="12" value="6" title="n = ring size"></div>
+    <div class="sect">Rings</div>
+    <div class="grp small">
+      <button class="pre" data-p="benzene">Benzene</button>
+      <button class="pre" data-p="naphthalene">Naphthalene</button>
+      <button class="pre" data-p="pyridine">Pyridine</button>
+      <button class="pre" data-p="pyrimidine">Pyrimidine</button>
+      <button class="pre" data-p="pyrrole">Pyrrole</button>
+      <button class="pre" data-p="furan">Furan</button>
+      <button class="pre" data-p="thiophene">Thiophene</button>
+      <button class="pre" data-p="imidazole">Imidazole</button>
+      <button class="pre" data-p="indole">Indole</button>
+    </div>
+    <div class="sect">Groups</div>
+    <div class="grp small">
+      <button class="pre" data-p="cooh" title="Carboxylic acid">COOH</button>
+      <button class="pre" data-p="cho" title="Aldehyde">CHO</button>
+      <button class="pre" data-p="nitro" title="Nitro">NO₂</button>
+      <button class="pre" data-p="cn" title="Nitrile">C≡N</button>
+      <button class="pre" data-p="vinyl" title="Vinyl">Vinyl</button>
+      <button class="pre" data-p="ethynyl" title="Ethynyl">Ethynyl</button>
+      <button class="pre" data-p="ipr" title="Isopropyl">i-Pr</button>
+      <button class="pre" data-p="ome" title="Methoxy">OMe</button>
+    </div>
+    <div id="status">New atoms: C</div>
+  </aside>
+  <div class="split" id="spl" title="Drag to resize · double-click to reset"></div>
+  <section id="stage"><canvas id="ed"></canvas></section>
+  <div class="split" id="spr" title="Drag to resize · double-click to reset"></div>
+  <aside id="panel">
+    <nav><button class="tab on" data-tab="a">Analysis</button><button class="tab" data-tab="d">3D view</button></nav>
+    <div id="tab-a">
+      <div class="card"><div class="lbl">Molecular formula</div><div id="formula" class="big">–</div>
+        <div class="row"><span>Molar mass</span><b id="mass">–</b></div>
+        <div class="row"><span>Degree of unsaturation</span><b id="dbe">–</b></div>
+        <div class="row"><span>Atoms (heavy / H)</span><b id="cnt">–</b></div></div>
+      <button id="arom" class="primary">Determine aromaticity</button>
+      <button id="dip" class="primary">Estimate dipole moment</button>
+      <button disabled title="Next phase">Determine IUPAC name (Coming Soon)</button>
+      <button disabled title="Next phase">Check optical activity (Coming Soon)</button>
+      <div id="result"></div>
+    </div>
+    <div id="tab-d" hidden>
+      <button id="to3d" class="primary">Convert drawing to 3D</button>
+      <canvas id="v3"></canvas>
+      <div class="row3">
+        <select id="style"><option value="bs">Ball &amp; stick</option><option value="st">Sticks</option><option value="sf">Space-filling</option></select>
+        <label><input type="checkbox" id="showh" checked> H</label>
+        <label><input type="checkbox" id="lbl"> labels</label>
+        <label><input type="checkbox" id="spin" checked> spin</label>
+        <label><input type="checkbox" id="showdip" checked> dipole</label>
+      </div>
+      <button id="expxyz">Export XYZ</button>
+      <p class="hint">Drag to rotate · scroll to zoom. Wedge/dash bonds set the z-direction, so stereochemistry and cis/trans are kept.</p>
+    </div>
+  </aside>
+</main>
+<script src="chem.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

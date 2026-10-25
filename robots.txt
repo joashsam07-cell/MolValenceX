@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://joashsam07-cell.github.io/MolValenceX/sitemap.xml

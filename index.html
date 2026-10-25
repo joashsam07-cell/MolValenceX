@@ -26,11 +26,11 @@
 {"@context":"https://schema.org","@type":"WebApplication","name":"MolValenceX","url":"https://joashsam07-cell.github.io/MolValenceX/","applicationCategory":"EducationalApplication","applicationSubCategory":"Chemistry","operatingSystem":"Any (web browser)","browserRequirements":"Requires JavaScript","description":"Free online chemical structure editor with aromaticity (Hückel) analysis, dipole moment estimate, molecular formula, molar mass, degree of unsaturation and 2D to 3D viewer.","isAccessibleForFree":true,"license":"https://opensource.org/licenses/MIT","author":{"@type":"Person","name":"Joash Sam"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"keywords":"molecule drawer, aromaticity, Hückel rule, dipole moment, 3D molecule viewer, organic chemistry, medicinal chemistry"}
 </script>
 <link rel="stylesheet" href="style.css">
-  <meta name="google-site-verification" content="P6Mdk1RGkNOp1FRiAvc_6n_WMnMY3mo2BvgtLaBA4hQ" />
 </head>
 <body>
 <header>
   <h1>⬡ MolValenceX <span style="font-size:12px;font-weight:400;color:#94a3b8">by Joash Sam</span></h1>
+  <button id="tour-btn" title="Guided tutorial of every feature">🎓 Take a Tutorial</button>
   <button id="mode-toggle" class="glow-btn">💻 Switch to Laptop View</button>
   <select id="examples"><option value="">Load example…</option></select>
   <button id="undo" title="Ctrl+Z">↶ Undo</button>
@@ -54,10 +54,13 @@
     </div>
     <div class="grp" id="elements"></div>
     <select id="more"><option value="">More…</option></select>
+    <div id="pre-chain">
     <div class="sect">Presets</div>
     <div class="hintsm">Pick one, then click canvas to place, atom to attach, or bond to fuse.</div>
     <div class="prow"><button class="pre" data-p="alkane" title="Straight chain of n carbons">n-Alkane</button><input id="n-alk" type="number" min="1" max="30" value="4" title="n = number of carbons"></div>
     <div class="prow"><button class="pre" data-p="cyclo" title="Ring of n carbons">Cycloalkane</button><input id="n-cyc" type="number" min="3" max="12" value="6" title="n = ring size"></div>
+    </div>
+    <div id="pre-lib">
     <div class="sect">Rings</div>
     <div class="grp small">
       <button class="pre" data-p="benzene">Benzene</button>
@@ -81,6 +84,7 @@
       <button class="pre" data-p="ipr" title="Isopropyl">i-Pr</button>
       <button class="pre" data-p="ome" title="Methoxy">OMe</button>
     </div>
+    </div>
     <div id="status">New atoms: C</div>
   </aside>
   
@@ -97,6 +101,7 @@
         <div class="row"><span>Atoms (heavy / H)</span><b id="cnt">–</b></div></div>
       <button id="arom" class="primary">Determine aromaticity</button>
       <button id="dip" class="primary">Estimate dipole moment</button>
+      <button id="ez" class="primary">Check E/Z, cis / trans</button>
       <button disabled title="Next phase">Determine IUPAC name (Soon)</button>
       <button disabled title="Next phase">Check optical activity (Soon)</button>
       <div id="result"></div>

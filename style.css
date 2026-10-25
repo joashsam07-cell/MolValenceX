@@ -1,4 +1,5 @@
 * { box-sizing: border-box; }
+
 body {
   margin: 0;
   font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -14,12 +15,18 @@ body {
   display: flex;
   flex-direction: column;
   -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
 }
-@keyframes bgShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+
+@keyframes bgShift { 
+  0% {background-position: 0% 50%} 
+  50% {background-position: 100% 50%} 
+  100% {background-position: 0% 50%} 
+}
 
 /* --- Glassmorphism UI Shell --- */
 header, #tools, #panel, .card {
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -28,9 +35,10 @@ header {
   display: flex; gap: 8px; align-items: center; padding: 10px 12px;
   border-bottom: 1px solid rgba(255,255,255,0.1); flex-wrap: wrap;
   box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  z-index: 50;
+  position: relative;
 }
 h1 { font-size: 17px; margin: 0 12px 0 0; color: #f8fafc; text-shadow: 0 0 10px rgba(255,255,255,0.2); }
-h1 span { color: #94a3b8 !important; }
 
 /* --- Form controls & Neon glow --- */
 button, select, input {
@@ -52,49 +60,51 @@ button.primary:hover { background: #6366f1; box-shadow: 0 0 18px rgba(99,102,241
 #mode-toggle { background: rgba(16, 185, 129, 0.2); border-color: #34d399; color: #a7f3d0; box-shadow: 0 0 10px rgba(16,185,129,0.3); }
 #mode-toggle:hover { background: rgba(16, 185, 129, 0.4); box-shadow: 0 0 15px rgba(16,185,129,0.6); }
 
-main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
-#tools { flex: none; padding: 10px; overflow: auto; }
-#panel { flex: none; padding: 12px; overflow: auto; }
+/* --- Containers --- */
+main { flex: 1; display: flex; position: relative; z-index: 1; }
 
-/* Grid and Active tool styling */
+#tools, #panel { padding: 12px; }
+
+/* --- Stage (White Background is strictly enforced) --- */
+#stage {
+  flex: 1; 
+  position: relative; 
+  overflow: hidden; 
+  z-index: 10;
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+}
+#ed { 
+  position: absolute; inset: 0; width: 100%; height: 100%; 
+  background: #ffffff; cursor: crosshair; touch-action: none; 
+}
+.canvas-container-3d { position: relative; width: 100%; height: 320px; border-radius: 10px; overflow: hidden; margin: 8px 0; }
+#v3 { position: absolute; top:0; left:0; width: 100%; height: 100%; background: #ffffff; touch-action: none; cursor: grab; }
+
+
+/* --- UI Elements --- */
 .grp { display: grid; gap: 6px; margin-bottom: 12px; }
 .grp button { height: 40px; padding: 2px; font-weight: 700; font-size: 15px; }
 
-/* Active state neon */
 .grp button.on, .pre.on, .tab.on {
-  background: rgba(99, 102, 241, 0.3);
+  background: rgba(99, 102, 241, 0.4);
   border-color: #818cf8;
   box-shadow: 0 0 12px rgba(129, 140, 248, 0.6), inset 0 0 6px rgba(129,140,248,0.4);
   color: #fff;
 }
 
-/* Ensure dark text for Elements pops against dark background */
 #elements button { filter: brightness(1.5) drop-shadow(0 0 3px currentColor); background: rgba(0,0,0,0.2); }
-#elements button.on { background: rgba(99,102,241,0.3); filter: brightness(2) drop-shadow(0 0 5px currentColor); }
+#elements button.on { background: rgba(99,102,241,0.4); filter: brightness(2) drop-shadow(0 0 5px currentColor); }
 
-/* SVG icons fix for dark mode */
 .grp svg { width: 22px; height: 22px; stroke: #e2e8f0; stroke-width: 2; fill: none; }
 .grp svg polygon { fill: #e2e8f0; }
 
-/* --- White Canvas Areas (Preserving original visibility) --- */
-#stage { flex: 1; position: relative; min-width: 0; }
-#ed { position: absolute; inset: 0; width: 100%; height: 100%; background: #ffffff; cursor: crosshair; touch-action: none; border-radius: 8px; box-shadow: inset 0 0 15px rgba(0,0,0,0.1); }
-#v3 { width: 100%; height: 340px; background: #ffffff; border: none; border-radius: 10px; margin: 8px 0; touch-action: none; cursor: grab; box-shadow: inset 0 0 15px rgba(0,0,0,0.1); }
-
-/* Typography & Layout */
 .sect { font-size: 11px; font-weight: 700; color: #94a3b8; margin: 12px 0 6px; text-transform: uppercase; letter-spacing: .05em; }
 .hintsm { font-size: 11px; color: #cbd5e1; margin-bottom: 8px; line-height: 1.3; }
 #status { margin-top: 10px; font-size: 12px; color: #94a3b8; }
 .lbl { font-size: 12px; color: #94a3b8; }
 .big { font-size: 22px; font-weight: 700; color: #f8fafc; text-shadow: 0 0 8px rgba(255,255,255,0.3); }
 
-/* Splitters */
-.split { flex: none; width: 7px; cursor: col-resize; background: rgba(255,255,255,0.05); position: relative; touch-action: none; }
-.split::after { content: ""; position: absolute; left: 2px; top: 50%; width: 3px; height: 36px; margin-top: -18px; border-radius: 2px; background: rgba(255,255,255,0.2); }
-.split:hover, .split.drag { background: rgba(99,102,241,0.3); }
-.split:hover::after, .split.drag::after { background: #818cf8; box-shadow: 0 0 8px #818cf8; }
-
-/* Tags / Pills */
+/* --- Tags / Pills --- */
 .chip { display: inline-block; padding: 4px 10px; border-radius: 99px; font-weight: 700; color: #fff; margin: 6px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
 .aromatic { background: #16a34a; box-shadow: 0 0 10px rgba(22,163,74,0.5); }
 .antiaromatic { background: #dc2626; box-shadow: 0 0 10px rgba(220,38,38,0.5); }
@@ -106,7 +116,6 @@ main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .warn { background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 8px; padding: 8px; font-size: 13px; margin: 6px 0; color: #fcd34d; }
 .hint { font-size: 12px; color: #cbd5e1; }
 
-/* Inputs */
 .prow { display: flex; gap: 6px; margin-bottom: 6px; }
 .prow button { flex: 1; min-width: 0; height: 36px; font-size: 12px; font-weight: 600; }
 .prow input { width: 50px; text-align: center; }
@@ -117,59 +126,61 @@ nav button { flex: 1; min-height: 40px; }
 .row { display: flex; justify-content: space-between; margin-top: 6px; }
 .row3 { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 
+/* Splitters */
+.split { flex: none; width: 7px; cursor: col-resize; background: rgba(255,255,255,0.05); position: relative; touch-action: none; z-index: 20; }
+.split::after { content: ""; position: absolute; left: 2px; top: 50%; width: 3px; height: 36px; margin-top: -18px; border-radius: 2px; background: rgba(255,255,255,0.2); }
+.split:hover, .split.drag { background: rgba(99,102,241,0.3); }
+.split:hover::after, .split.drag::after { background: #818cf8; box-shadow: 0 0 8px #818cf8; }
+
 /* =========================================
    MODE SPECIFIC STYLES 
    ========================================= */
 
 /* --- LAPTOP MODE --- */
 body.laptop-mode main { flex-direction: row; }
-body.laptop-mode #tools { width: 170px; border-right: 1px solid rgba(255,255,255,0.1); }
-body.laptop-mode #panel { width: 360px; border-left: 1px solid rgba(255,255,255,0.1); }
+body.laptop-mode #tools { width: 180px; overflow-y: auto; z-index: 20; border-right: 1px solid rgba(255,255,255,0.1); }
+body.laptop-mode #panel { width: 360px; overflow-y: auto; z-index: 20; border-left: 1px solid rgba(255,255,255,0.1); }
 body.laptop-mode .grp { grid-template-columns: repeat(auto-fill, minmax(45px, 1fr)); }
 body.laptop-mode .grp.small button { font-size: 11px; padding: 4px; }
+body.laptop-mode .split { display: block; }
 
 /* --- MOBILE MODE --- */
-body.mobile-mode main { flex-direction: column; overflow-y: auto; overflow-x: hidden; }
-body.mobile-mode header { position: sticky; top: 0; z-index: 50; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+body.mobile-mode { overflow-y: auto; overflow-x: hidden; }
+body.mobile-mode main { flex-direction: column; overflow: visible; }
 body.mobile-mode .split { display: none !important; }
 
 /* 1. Canvas at the top */
 body.mobile-mode #stage {
   order: 1;
   width: 100%;
-  flex: 0 0 50vh; 
-  min-height: 320px;
-  padding: 8px;
-}
-body.mobile-mode #ed {
-  position: relative; /* Respects padding constraints */
-  border-radius: 12px;
-  height: 100%; width: 100%;
-  box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+  flex: none;
+  height: 55vh; 
+  min-height: 350px;
 }
 
-/* 2. Tools dock below canvas (Fixes Clutter Issue) */
+/* 2. Tools dock below canvas (Fixes Clutter) */
 body.mobile-mode #tools {
   order: 2;
   width: 100% !important;
-  max-height: 250px; 
-  overflow-y: auto;
+  flex: none;
   border-bottom: 1px solid rgba(255,255,255,0.1);
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.3);
   border-right: none;
+  padding: 12px 16px;
 }
-/* Converts massive grid blocks into sleek horizontal scrollbars */
+/* Horizontal scrolling grids for tools */
 body.mobile-mode .grp {
   display: flex; flex-wrap: nowrap; overflow-x: auto;
-  gap: 8px; padding-bottom: 6px; -webkit-overflow-scrolling: touch;
+  gap: 10px; padding-bottom: 10px; -webkit-overflow-scrolling: touch;
 }
-body.mobile-mode .grp button { flex: 0 0 auto; width: 44px; }
+body.mobile-mode .grp button { flex: 0 0 auto; width: 48px; }
 body.mobile-mode .grp.small button { width: auto; padding: 0 16px; font-size: 13px; }
 
 /* 3. Panel at the bottom */
 body.mobile-mode #panel {
   order: 3;
   width: 100% !important;
+  flex: none;
   border-left: none;
+  padding: 16px;
 }
-body.mobile-mode #v3 { height: 280px; }

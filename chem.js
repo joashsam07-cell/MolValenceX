@@ -690,6 +690,73 @@
     return { supported: true, mu, vec: D, cls };
   }
 
+  /* ------------------------------------------------ E/Z (CIP priorities) */
+  const ZNUM = { H: 1, Li: 3, B: 5, C: 6, N: 7, O: 8, F: 9, Na: 11, Mg: 12, Al: 13, Si: 14, P: 15, S: 16, Cl: 17, K: 19, Ca: 20, Se: 34, Br: 35, I: 53 };
+
+  // E/Z label for every acyclic C=C, C=N or N=N bond whose two ends each carry two different substituents.
+  // Priorities follow the CIP rules (atomic number, then sphere by sphere outwards, with duplicated atoms for
+  // multiple bonds and ring closures). Geometry is read from the 2D drawing.
+  function ezStereo(mol, g, rg) {
+    g = g || buildGraph(mol); rg = rg || findRings(g);
+    const Zof = i => ZNUM[mol.atoms[i].el] || 0;
+    const kids = n => {
+      if (n.kind !== 'real') return [];
+      const out = [], par = n.anc[n.anc.length - 1];
+      g.nbrs[n.i].forEach(e => {
+        if (e.j !== par) {
+          if (n.anc.includes(e.j)) out.push({ z: Zof(e.j), i: -1, kind: 'dup' });            // ring closure
+          else out.push({ z: Zof(e.j), i: e.j, kind: 'real', anc: n.anc.concat(n.i) });
+        }
+        for (let k = 1; k < e.order; k++) out.push({ z: Zof(e.j), i: -1, kind: 'dup' });       // duplicate for a multiple bond
+      });
+      for (let k = 0; k < g.hc[n.i]; k++) out.push({ z: 1, i: -1, kind: 'H' });
+      return out;
+    };
+    const sortKids = (n, depth) => kids(n).sort((a, b) => depth > 0 ? cmpSub(b, a, depth) : b.z - a.z);
+    function cmpSub(p, q, depth) {                      // > 0 when p outranks q
+      if (p.z !== q.z) return p.z - q.z;
+      let LP = [p], LQ = [q];
+      for (let s = 0; s < 8 && (LP.length || LQ.length); s++) {
+        const GP = LP.map(n => sortKids(n, depth - 1)), GQ = LQ.map(n => sortKids(n, depth - 1));
+        const m = Math.max(GP.length, GQ.length);
+        for (let k = 0; k < m; k++) {
+          const a = GP[k] || [], b = GQ[k] || [], l = Math.max(a.length, b.length);
+          for (let t = 0; t < l; t++) { const za = a[t] ? a[t].z : 0, zb = b[t] ? b[t].z : 0; if (za !== zb) return za - zb; }
+        }
+        LP = [].concat(...GP); LQ = [].concat(...GQ);
+      }
+      return 0;
+    }
+    const bonds = []; let doubles = 0;
+    g.bonds.forEach((bd, bi) => {
+      if (bd.order !== 2 || rg.bondInRing[bi]) return;
+      const A = bd.i, B = bd.j, ok = ['C', 'N'].includes(mol.atoms[A].el) && ['C', 'N'].includes(mol.atoms[B].el);
+      if (!ok) return;
+      doubles++;
+      if ([A, B].some(x => g.nbrs[x].some(e => e.bi !== bi && e.order >= 2))) return;           // allene / conjugated cumulene / alkyne end
+      const ends = [[A, B], [B, A]].map(([X, O]) => {
+        const subs = [];
+        g.nbrs[X].forEach(e => { if (e.j !== O) subs.push({ z: Zof(e.j), i: e.j, kind: 'real', anc: [X] }); });
+        for (let k = 0; k < g.hc[X]; k++) subs.push({ z: 1, i: -1, kind: 'H' });
+        if (mol.atoms[X].el === 'N' && subs.length === 1) subs.push({ z: 0, i: -1, kind: 'lp' });   // lone pair ranks last
+        return subs;
+      });
+      if (ends.some(s => s.length !== 2)) return;
+      const top = ends.map(s => { const c = cmpSub(s[0], s[1], 3); return c === 0 ? null : (c > 0 ? s[0] : s[1]); });
+      if (!top[0] || !top[1] || top[0].i < 0 || top[1].i < 0) return;                           // identical groups, or highest group not drawn
+      const pa = mol.atoms[A], pb = mol.atoms[B], ax = pb.x - pa.x, ay = pb.y - pa.y;
+      const side = i => Math.sign(ax * (mol.atoms[i].y - pa.y) - ay * (mol.atoms[i].x - pa.x));
+      const s1 = side(top[0].i), s2 = side(top[1].i);
+      if (!s1 || !s2) return;
+      const heavy = ends.map(s => s.filter(x => x.z > 1));
+      let cistrans = null;
+      if (heavy[0].length === 1 && heavy[1].length === 1 && heavy[0][0].i >= 0 && heavy[1][0].i >= 0)
+        cistrans = side(heavy[0][0].i) === side(heavy[1][0].i) ? 'cis' : 'trans';
+      bonds.push({ mi: bd.mi, a: A, b: B, label: s1 === s2 ? 'Z' : 'E', cistrans, ha: top[0].i, hb: top[1].i });
+    });
+    return { bonds, doubles };
+  }
+
   /* --------------------------------------------------------- file export */
   function toMolBlock(mol, Lpx) {
     const L = Lpx || 40, f = x => x.toFixed(4).padStart(10);
@@ -709,6 +776,6 @@
     return out.join('\n');
   }
 
-  root.Chem = { EL, valences, buildGraph, formula, findRings, aromaticity, clean2D, embed3D, dipole, toMolBlock, toXYZ, _params: { PI_DONOR } };
+  root.Chem = { EL, valences, buildGraph, formula, findRings, aromaticity, clean2D, embed3D, dipole, ezStereo, toMolBlock, toXYZ, _params: { PI_DONOR } };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.Chem;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -3,12 +3,12 @@
 const C = window.Chem, $ = s => document.querySelector(s), BL = 40;
 const cv = $('#ed'), cx = cv.getContext('2d');
 let mol = { atoms: [], bonds: [] }, nid = 1, ver = 0, tool = 'bond', vr = { o: 1, s: 0 }, el = 'C';
-let sel = null, drag = null, an = null, hist = [], hi = -1, cache = null;
+let sel = null, drag = null, an = null, ezr = null, hist = [], hi = -1, cache = null;
 
 /* ---------- state / history ---------- */
 const snap = () => JSON.stringify({ m: mol, n: nid });
 function commit() { hist = hist.slice(0, hi + 1); hist.push(snap()); hi = hist.length - 1; changed(); }
-function changed() { ver++; an = null; update(); draw(); }
+function changed() { ver++; an = null; ezr = null; update(); draw(); }
 function restore() { const s = JSON.parse(hist[hi]); mol = s.m; nid = s.n; sel = null; changed(); }
 function undo() { if (hi > 0) { hi--; restore(); } }
 function redo() { if (hi < hist.length - 1) { hi++; restore(); } }
@@ -37,7 +37,7 @@ function bondAt(p) {
 }
 
 /* ---------- editing ---------- */
-function addAtom(e, x, y) { const a = { id: nid++, el: e, x, y, charge: 0 }; mol.atoms.push(a); ver++; an = null; return a; }
+function addAtom(e, x, y) { const a = { id: nid++, el: e, x, y, charge: 0 }; mol.atoms.push(a); ver++; an = null; ezr = null; return a; }
 function setBond(ex, v, from) {
   if (v.s) {
     if (ex.stereo === v.s && ex.a === from.id) { [ex.a, ex.b] = [ex.b, ex.a]; }
@@ -96,7 +96,7 @@ cv.onpointermove = e => {
   if (!drag) return;
   const p = P(e), dx = p.x - drag.x, dy = p.y - drag.y;
   if (Math.hypot(dx, dy) > 4) drag.moved = true;
-  if (drag.m === 'move') { drag.a.x += dx; drag.a.y += dy; drag.x = p.x; drag.y = p.y; ver++; an = null; }
+  if (drag.m === 'move') { drag.a.x += dx; drag.a.y += dy; drag.x = p.x; drag.y = p.y; ver++; an = null; ezr = null; }
   else if (drag.m === 'pan') { mol.atoms.forEach(a => { a.x += dx; a.y += dy; }); drag.x = p.x; drag.y = p.y; }
   else drag.end = bondEnd(drag, p);
   draw();
@@ -165,6 +165,14 @@ function draw() {
     if (a.charge) { cx.font = 'bold 11px system-ui'; cx.fillStyle = col; cx.fillText((Math.abs(a.charge) > 1 ? Math.abs(a.charge) : '') + (a.charge > 0 ? '+' : '−'), chx, a.y - 8); }
     cx.textBaseline = 'alphabetic';
   });
+  if (ezr) ezr.forEach(r => {
+    const p = A[r.a], q = A[r.b], hs = A[r.ha]; if (!p || !q || !hs) return;
+    let dx = q.x - p.x, dy = q.y - p.y; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    const sg = Math.sign(dx * (hs.y - p.y) - dy * (hs.x - p.x)) || 1;
+    const lx = (p.x + q.x) / 2 + dy * 18 * sg, ly = (p.y + q.y) / 2 - dx * 18 * sg;
+    cx.fillStyle = r.label === 'E' ? '#d97706' : '#0284c7'; cx.beginPath(); cx.roundRect ? cx.roundRect(lx - 12, ly - 10, 24, 20, 8) : cx.rect(lx - 12, ly - 10, 24, 20); cx.fill();
+    cx.fillStyle = '#fff'; cx.font = 'bold 13px system-ui'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(r.label, lx, ly + 1); cx.textBaseline = 'alphabetic';
+  });
   if (drag && drag.m === 'bond' && drag.end) {
     cx.strokeStyle = '#6366f1'; cx.setLineDash([5, 4]); line(drag.s.x, drag.s.y, drag.end.x, drag.end.y, 2); cx.setLineDash([]);
   }
@@ -208,15 +216,17 @@ function setEl(e) {
   if (tool !== 'bond' && tool !== 'atom') { document.querySelectorAll('#bondtools button').forEach(x => x.classList.remove('on')); }
   tool = 'atom'; document.querySelectorAll('#bondtools button, .pre').forEach(x => x.classList.remove('on'));
 }
-ELS.forEach(e => { const b = document.createElement('button'); b.textContent = e; b.style.color = C.EL[e].c; b.onclick = () => setEl(e); $('#elements').appendChild(b); });
+ELS.forEach(e => { const b = document.createElement('button'); b.textContent = e; b.style.color = e === 'C' ? '#e5e7eb' : C.EL[e].c; b.onclick = () => setEl(e); $('#elements').appendChild(b); });
 ['Li', 'Na', 'K', 'Mg', 'Ca', 'Al'].forEach(e => { const o = document.createElement('option'); o.textContent = e; $('#more').appendChild(o); });
 $('#more').onchange = e => { if (e.target.value) setEl(e.target.value); e.target.value = ''; };
 $('#undo').onclick = undo; $('#redo').onclick = redo;
 $('#clear').onclick = () => { mol = { atoms: [], bonds: [] }; sel = null; commit(); };
 $('#clean').onclick = () => { const p = C.clean2D(mol, BL); mol.atoms.forEach((a, i) => { a.x = p[i][0]; a.y = p[i][1]; }); commit(); };
-const dl = (name, text) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text])); a.download = name; a.click(); };
+const dl = (name, text) => { const u = URL.createObjectURL(new Blob([text])), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000); };
 $('#expmol').onclick = () => dl('molecule.mol', C.toMolBlock(mol, BL));
 window.addEventListener('keydown', e => {
+  if (tourMode !== 'off') { tourKey(e); return; }
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;   // typing in the n-boxes must not trigger shortcuts or delete atoms
   if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); return; }
   if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -433,13 +443,34 @@ c3.onwheel = e => { e.preventDefault(); zoom = Math.max(0.3, Math.min(4, zoom * 
 $('#to3d').onclick = () => {
   if (!mol.atoms.length) { m3 = null; dirty = true; return; }
   const b = $('#to3d'); b.textContent = 'Computing…';
-  setTimeout(() => { m3 = C.embed3D(mol); try { dip3 = C.dipole(mol, m3); } catch (er) { dip3 = null; } b.textContent = 'Convert drawing to 3D'; yaw = 0.6; pit = -0.35; dirty = true; }, 20);
+  setTimeout(() => { try { m3 = C.embed3D(mol); try { dip3 = C.dipole(mol, m3); } catch (er) { dip3 = null; } yaw = 0.6; pit = -0.35; } catch (er) { m3 = null; } b.textContent = 'Convert drawing to 3D'; dirty = true; }, 20);
+};
+$('#ez').onclick = () => {
+  const out = $('#result');
+  if (!mol.atoms.length) { out.innerHTML = '<div class="warn">Draw a molecule first.</div>'; return; }
+  const { g, rg } = G(), r = C.ezStereo(mol, g, rg), lab = i => mol.atoms[i].el + (i + 1);
+  const bad = mol.atoms.map((a, i) => g.ok[i] ? '' : a.el + (i + 1)).filter(Boolean);
+  ezr = r.bonds.length ? r.bonds : null;
+  let h = bad.length ? '<div class="warn">Over-valent atom(s): ' + bad.join(', ') + ' — results may be unreliable.</div>' : '';
+  if (!r.bonds.length) {
+    h += '<div class="warn">' + (r.doubles ? 'No E/Z isomerism found: each C=C / C=N bond here has two identical groups on one end, or is part of a cumulene.' : 'No acyclic C=C, C=N or N=N double bond in the drawing, so there is no E/Z or cis/trans isomerism to assign.') + '</div>';
+  } else {
+    r.bonds.forEach(b => {
+      h += '<div class="ring ez' + b.label + '"><b>' + lab(b.a) + '=' + lab(b.b) + ' · ' + b.label + (b.cistrans ? ' (' + b.cistrans + ')' : '') + '</b><br>' +
+        'Highest-priority groups: <b>' + lab(b.ha) + '</b> on ' + lab(b.a) + ' and <b>' + lab(b.hb) + '</b> on ' + lab(b.b) + ' are on the ' +
+        (b.label === 'Z' ? 'same side → Z (zusammen).' : 'opposite sides → E (entgegen).') +
+        (b.cistrans ? '' : ' <small>cis / trans is only used for 1,2-disubstituted alkenes; use E / Z here.</small>') + '</div>';
+    });
+  }
+  h += '<div class="hint">Priorities follow the CIP rules (atomic number, then outwards sphere by sphere, duplicating atoms for multiple bonds). Ring double bonds and cumulenes are not assessed. Labels are drawn on the canvas.</div>';
+  out.innerHTML = h; draw();
 };
 $('#dip').onclick = () => {
   const out = $('#result');
   if (!mol.atoms.length) { out.innerHTML = '<div class="warn">Draw a molecule first.</div>'; return; }
   const { g } = G(), bad = mol.atoms.map((a, i) => g.ok[i] ? '' : a.el + (i + 1)).filter(Boolean);
-  m3 = C.embed3D(mol); dip3 = C.dipole(mol, m3); dirty = true;
+  try { m3 = C.embed3D(mol); dip3 = C.dipole(mol, m3); } catch (er) { out.innerHTML = '<div class="warn">Could not compute this structure.</div>'; return; }
+  dirty = true;
   const warn = bad.length ? '<div class="warn">Over-valent atom(s): ' + bad.join(', ') + ' — results may be unreliable.</div>' : '';
   if (!dip3.supported) { out.innerHTML = warn + '<div class="warn">' + dip3.reason + '</div>'; return; }
   const cls = { 'non-polar': 'dpn', 'weakly polar': 'dpw', 'polar': 'dpp', 'strongly polar': 'dps' }[dip3.cls];
@@ -454,6 +485,126 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   $('#tab-a').hidden = t.dataset.tab !== 'a'; $('#tab-d').hidden = t.dataset.tab !== 'd';
   size3(); dirty = true;
 });
+
+/* ---------- guided tutorial ---------- */
+const TOUR_KEY = 'mvx-tour-seen';
+let tourMode = 'off', tourI = 0, tourSteps = [], tourDemo = false;
+const tourBlock = document.createElement('div'), tourHole = document.createElement('div'), tourCard = document.createElement('div');
+tourBlock.id = 'tour-block'; tourHole.id = 'tour-hole'; tourCard.id = 'tour-card';
+[tourBlock, tourHole, tourCard].forEach(x => { x.hidden = true; document.body.appendChild(x); });
+const STEPS = [
+  { t: 'Welcome to MolValenceX', x: 'A short tour of every part of the app. Use <b>Next / Back</b> (or the ← → keys). <b>Esc</b> leaves the tour at any time, and the <b>🎓 Take a Tutorial</b> button at the top restarts it.' },
+  { sel: '#mode-toggle', t: 'Layout switch', x: 'Flip between <b>Mobile view</b> (everything stacked, page scrolls) and <b>Laptop view</b> (tools, canvas and results side by side, panels resizable).' },
+  { sel: '#examples', t: 'Load example', x: 'Open a ready-made molecule (benzene, azulene, tropylium, cis / trans-butene…). Note: an example <b>replaces</b> the current drawing. Use Undo to bring yours back.' },
+  { sel: ['#undo', '#redo', '#clean', '#clear'], t: 'Edit controls', x: '<b>Undo / Redo</b> (Ctrl+Z / Ctrl+Y). <b>Clean up</b> tidies bond lengths and angles. <b>Clear</b> empties the canvas.' },
+  { sel: '#expmol', t: 'Export MOL', x: 'Saves the drawing as a standard <b>.mol</b> file that opens in ChemDraw, Avogadro, MolView and similar programs.' },
+  { sel: '#stage', t: 'Drawing canvas', x: 'Click empty space to place an atom. <b>Drag from an atom</b> to pull out a bond. Click an existing bond with a bond tool to change its order. Hydrogens are filled in automatically from valence, so draw only the heavy atoms. A red dashed ring marks an over-valent atom.' },
+  { sel: '#bondtools', t: 'Bond & edit tools', x: '<b>⇱ Select</b>: drag an atom to move it, drag empty space to pan. <b>Single / double / triple</b> bonds (keys 1, 2, 3). <b>Wedge</b> = bond towards you, <b>dash</b> = away; they set stereochemistry and the 3D shape. <b>⌫</b> erases an atom or bond. <b>+ / −</b> add a formal charge to the atom you click.' },
+  { sel: '#elements', t: 'Atoms', x: 'Choose the element for new atoms. Click the canvas to place one, drag from an atom to attach one, or click an existing atom to change its element. <b>More…</b> holds Li, Na, K, Mg, Ca, Al. Keys: C N O S P F H B I, L = Cl, R = Br.' },
+  { sel: '#pre-chain', t: 'Presets: chains & rings', x: 'Presets are <b>added to</b> your drawing, never replacing it. <b>n-Alkane</b> and <b>Cycloalkane</b> use the number box beside them. Pick one, then click the canvas to place it, click an atom to attach it, or (rings) click a bond to fuse it. <b>Esc</b> stops placing.' },
+  { sel: '#pre-lib', t: 'Ring & group library', x: 'Rings: benzene, naphthalene, pyridine, pyrimidine, pyrrole, furan, thiophene, imidazole, indole. Groups: COOH, CHO, NO₂, C≡N, vinyl, ethynyl, i-Pr, OMe. Chain and fuse them to build complex molecules quickly.' },
+  { sel: '#spl', only: 'laptop', t: 'Resizable panels', x: 'Drag this handle (and the matching one at the right edge of the canvas) to resize the panels. <b>Double-click</b> a handle to reset. Your widths are remembered.' },
+  { sel: '#tab-a .card', tab: 'a', demo: true, t: 'Live results', x: 'Formula, molar mass, degree of unsaturation and atom count update after every change. <i>(If the canvas was empty, benzene is drawn as a demo and cleared when the tour ends.)</i>' },
+  { sel: '#arom', tab: 'a', demo: true, run: () => $('#arom').click(), t: 'Determine aromaticity', x: 'Applies <b>Hückel\'s rule</b> ring by ring: <span style="color:#4ade80">aromatic</span> (4n+2 π electrons), <span style="color:#f87171">anti-aromatic</span> (4n) or <span style="color:#cbd5e1">non-aromatic</span>. Rings are shaded on the canvas with their π-electron count, and the reasoning is listed below.' },
+  { sel: '#dip', tab: 'a', demo: true, run: () => $('#dip').click(), t: 'Estimate dipole moment', x: 'Adds up bond dipoles on a quick 3D geometry and reports the value in debye with a polarity class. A rough estimate (typically ±0.3–0.5 D), not defined for ions. The arrow is drawn in the 3D view.' },
+  { sel: '#ez', tab: 'a', demoEx: 'cis-2-butene', run: () => $('#ez').click(), t: 'E / Z and cis / trans', x: 'Finds every acyclic <b>C=C, C=N or N=N</b> double bond, ranks the groups on each end by <b>CIP rules</b> and labels it <b>E</b> or <b>Z</b> (plus cis / trans for simple alkenes). The labels appear on the canvas. A cis-2-butene demo is drawn here.' },
+  { sel: '#tab-a button[disabled]', tab: 'a', t: 'Coming soon', x: '<b>IUPAC naming</b> and <b>optical activity</b> are planned for a later version.' },
+  { sel: '#to3d', tab: 'd', demo: true, t: '3D view', x: '<b>Convert drawing to 3D</b> builds a 3D model from your 2D sketch. Wedge and dash bonds are used to set chirality.' },
+  { sel: '.canvas-container-3d', tab: 'd', demo: true, run: () => $('#to3d').click(), t: '3D viewer', x: '<b>Drag</b> to rotate, <b>scroll</b> to zoom. The yellow arrow is the dipole moment (δ+ → δ−).' },
+  { sel: '.row3', tab: 'd', t: 'Display options', x: 'Switch between <b>Ball &amp; stick</b>, <b>Sticks</b> and <b>Space-filling</b>; show or hide H, atom labels, auto-spin and the dipole arrow.' },
+  { sel: '#expxyz', tab: 'd', t: 'Export XYZ', x: 'Saves the 3D coordinates as an <b>.xyz</b> file for other programs.' },
+  { tab: 'a', t: 'You\'re ready!', x: 'Draw a molecule, press the analysis buttons, then explore it in 3D. Results are <b>predictions for learning</b> (see the disclaimer below). Restart this tour any time from <b>🎓 Take a Tutorial</b>.' }
+];
+function trect(sel) {
+  const els = [].concat(sel).flatMap(s => [...document.querySelectorAll(s)]);
+  let r = null;
+  els.forEach(e => { const b = e.getBoundingClientRect(); if (!b.width || !b.height) return; r = r ? { left: Math.min(r.left, b.left), top: Math.min(r.top, b.top), right: Math.max(r.right, b.right), bottom: Math.max(r.bottom, b.bottom) } : { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; });
+  if (r) { r.width = r.right - r.left; r.height = r.bottom - r.top; }
+  return { r, first: els[0] };
+}
+function tourPlace(r) {
+  const vw = window.innerWidth, vh = window.innerHeight, cw = Math.min(340, vw - 24), gap = 14, m = 12;
+  tourCard.style.width = cw + 'px'; tourCard.style.left = '0px'; tourCard.style.top = '0px';
+  const ch = tourCard.offsetHeight, cl = (a, lo, hi) => Math.max(lo, Math.min(hi, a));
+  let top, left;
+  if (!r) { top = (vh - ch) / 2; left = (vw - cw) / 2; }
+  else {
+    left = cl(r.left + r.width / 2 - cw / 2, m, vw - cw - m);
+    if (vh - r.bottom - 6 >= ch + gap + m) top = r.bottom + 6 + gap;
+    else if (r.top - 6 >= ch + gap + m) top = r.top - 6 - ch - gap;
+    else if (vw - r.right - 6 >= cw + gap + m) { left = r.right + 6 + gap; top = cl(r.top, m, vh - ch - m); }
+    else if (r.left - 6 >= cw + gap + m) { left = r.left - 6 - cw - gap; top = cl(r.top, m, vh - ch - m); }
+    else top = vh - ch - m;
+  }
+  tourCard.style.left = Math.round(left) + 'px'; tourCard.style.top = Math.round(Math.max(m, top)) + 'px';
+}
+function tourLayout(scroll) {
+  const s = tourSteps[tourI]; let r = null;
+  if (s.sel) {
+    const t = trect(s.sel);
+    if (t.first && scroll) { const b = t.first.getBoundingClientRect(); t.first.scrollIntoView({ block: b.height < window.innerHeight * 0.5 ? 'center' : 'nearest', inline: 'nearest' }); }
+    r = trect(s.sel).r;
+  }
+  if (r) {
+    tourBlock.className = ''; tourHole.hidden = false;
+    tourHole.style.left = (r.left - 6) + 'px'; tourHole.style.top = (r.top - 6) + 'px'; tourHole.style.width = (r.width + 12) + 'px'; tourHole.style.height = (r.height + 12) + 'px';
+  } else { tourBlock.className = 'dim'; tourHole.hidden = true; }
+  tourPlace(r);
+}
+function tourShow(i) {
+  tourI = i; const s = tourSteps[i];
+  if (s.tab) $('.tab[data-tab="' + s.tab + '"]').click();
+  if (s.demoEx && (tourDemo || !mol.atoms.length)) { nid = 1; const b = B(); EX[s.demoEx](b); mol = b.m; sel = null; tourDemo = true; commit(); }
+  else if (s.demo && !mol.atoms.length) { nid = 1; const b = B(); EX['Benzene'](b); mol = b.m; sel = null; tourDemo = true; commit(); }
+  if (s.run) { try { s.run(); } catch (e) {} }
+  const last = i === tourSteps.length - 1;
+  tourCard.innerHTML = '<div class="tc-step">Step ' + (i + 1) + ' of ' + tourSteps.length + '</div><h3>' + s.t + '</h3><p>' + s.x + '</p>' +
+    '<div class="tc-bar"><i style="width:' + Math.round((i + 1) / tourSteps.length * 100) + '%"></i></div>' +
+    '<div class="tc-actions"><button data-a="end">' + (last ? 'Close' : 'Skip tour') + '</button><span></span>' +
+    '<button data-a="back"' + (i ? '' : ' disabled') + '>← Back</button><button class="primary" data-a="next">' + (last ? 'Finish ✓' : 'Next →') + '</button></div>';
+  tourBlock.hidden = false; tourCard.hidden = false;
+  tourLayout(true);
+  try { tourCard.querySelector('[data-a="next"]').focus({ preventScroll: true }); } catch (e) {}
+}
+function tourSeen() { try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) {} }
+function tourStart() {
+  const lap = document.body.classList.contains('laptop-mode');
+  tourSteps = STEPS.filter(s => !s.only || (s.only === 'laptop') === lap);
+  tourMode = 'tour'; tourDemo = false; tourSeen(); tourShow(0);
+}
+function tourEnd() {
+  const wasTour = tourMode === 'tour';
+  tourMode = 'off'; tourBlock.hidden = tourHole.hidden = tourCard.hidden = true; tourSeen();
+  if (!wasTour) return;
+  $('.tab[data-tab="a"]').click();
+  if (tourDemo) { mol = { atoms: [], bonds: [] }; sel = null; m3 = null; dip3 = null; dirty = true; commit(); }
+  tourDemo = false; window.scrollTo(0, 0);
+}
+function tourWelcome() {
+  tourMode = 'welcome'; tourBlock.hidden = false; tourBlock.className = 'dim'; tourHole.hidden = true; tourCard.hidden = false;
+  tourCard.innerHTML = '<h3>👋 Welcome to MolValenceX</h3><p>Draw molecules and instantly get the formula, molar mass, aromaticity, dipole moment and a 3D view. Want a quick guided tour of how everything works?</p>' +
+    '<div class="tc-actions"><button data-a="skipw">Skip tutorial</button><span></span><button class="primary" data-a="start">🎓 Take the tutorial</button></div>';
+  tourPlace(null);
+}
+tourCard.addEventListener('click', e => {
+  const a = e.target.closest('button') && e.target.closest('button').dataset.a; if (!a) return;
+  if (a === 'start') tourStart();
+  else if (a === 'skipw' || a === 'end') tourEnd();
+  else if (a === 'next') { if (tourI >= tourSteps.length - 1) tourEnd(); else tourShow(tourI + 1); }
+  else if (a === 'back' && tourI > 0) tourShow(tourI - 1);
+});
+function tourKey(e) {
+  if (e.key === 'Escape') tourEnd();
+  else if (tourMode === 'tour' && e.key === 'ArrowRight') { if (tourI < tourSteps.length - 1) tourShow(tourI + 1); else tourEnd(); }
+  else if (tourMode === 'tour' && e.key === 'ArrowLeft' && tourI > 0) tourShow(tourI - 1);
+  else return;
+  e.preventDefault();
+}
+const tourRelayout = () => { if (tourMode === 'tour') tourLayout(false); else if (tourMode === 'welcome') tourPlace(null); };
+window.addEventListener('resize', tourRelayout);
+window.addEventListener('scroll', tourRelayout, true);
+$('#tour-btn').onclick = () => { if (tourMode === 'off') tourStart(); };
+setTimeout(() => { let seen = false; try { seen = !!localStorage.getItem(TOUR_KEY); } catch (e) {} if (!seen && tourMode === 'off') tourWelcome(); }, 700);
 
 /* ---------- start ---------- */
 hist = [snap()]; hi = 0; update(); loop();

@@ -2,13 +2,34 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
-<title>Molecule Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MolValenceX – Free Online Molecule Drawer, Aromaticity, Dipole Moment &amp; 3D Viewer</title>
+<meta name="description" content="MolValenceX is a free online chemical structure editor: draw molecules, get molecular formula, molar mass and degree of unsaturation, check aromaticity with Hückel's rule, estimate dipole moment, and view 2D to 3D. Export MOL and XYZ. For students, organic chemistry and drug-discovery learning.">
+<meta name="keywords" content="MolValenceX, molecule drawer, chemical structure editor, online molecule editor, draw molecules online, organic chemistry tool, aromaticity checker, Huckel rule calculator, aromatic antiaromatic nonaromatic, dipole moment calculator, 2D to 3D molecule viewer, molecular formula calculator, molar mass calculator, degree of unsaturation calculator, MOL file export, XYZ file export, functional groups, heterocycles, benzene, pyridine, medicinal chemistry, pharmaceutical chemistry, drug discovery, drug-like molecules, pharmacophore, API structure, IUPAC name, chirality, stereochemistry">
+<meta name="author" content="Joash Sam">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0f172a">
+<link rel="canonical" href="https://joashsam07-cell.github.io/MolValenceX/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MolValenceX">
+<meta property="og:title" content="MolValenceX – Free Online Molecule Drawer &amp; Chemistry Analyzer">
+<meta property="og:description" content="Draw molecules, check Hückel aromaticity, estimate dipole moment, get formula and molar mass, and view in 3D. Free, no install.">
+<meta property="og:url" content="https://joashsam07-cell.github.io/MolValenceX/">
+<meta property="og:image" content="https://joashsam07-cell.github.io/MolValenceX/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="MolValenceX – Free Online Molecule Drawer &amp; Chemistry Analyzer">
+<meta name="twitter:description" content="Draw molecules, check aromaticity, estimate dipole moment, view in 3D.">
+<meta name="twitter:image" content="https://joashsam07-cell.github.io/MolValenceX/og-image.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"MolValenceX","url":"https://joashsam07-cell.github.io/MolValenceX/","applicationCategory":"EducationalApplication","applicationSubCategory":"Chemistry","operatingSystem":"Any (web browser)","browserRequirements":"Requires JavaScript","description":"Free online chemical structure editor with aromaticity (Hückel) analysis, dipole moment estimate, molecular formula, molar mass, degree of unsaturation and 2D to 3D viewer.","isAccessibleForFree":true,"license":"https://opensource.org/licenses/MIT","author":{"@type":"Person","name":"Joash Sam"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"keywords":"molecule drawer, aromaticity, Hückel rule, dipole moment, 3D molecule viewer, organic chemistry, medicinal chemistry"}
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>⬡ Molecule Studio <span style="font-size:12px;font-weight:400;color:#94a3b8">by Joash Sam</span></h1>
+  <h1>⬡ MolValenceX <span style="font-size:12px;font-weight:400;color:#94a3b8">by Joash Sam</span></h1>
   <button id="mode-toggle" class="glow-btn">💻 Switch to Laptop View</button>
   <select id="examples"><option value="">Load example…</option></select>
   <button id="undo" title="Ctrl+Z">↶ Undo</button>
@@ -94,6 +115,10 @@
     </div>
   </aside>
 </main>
+<footer id="site-footer">
+  <p><b>Disclaimer:</b> This is for educational purposes only and not a reference for analytics. Given values are predicted and may differ from reality.</p>
+  <p>© 2026 Joash Sam · MolValenceX · <a href="LICENSE" target="_blank" rel="noopener">MIT License</a></p>
+</footer>
 <script src="chem.js"></script>
 <script src="app.js"></script>
 </body>

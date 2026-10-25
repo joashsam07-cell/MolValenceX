@@ -18,6 +18,7 @@ const atomById = id => mol.atoms.find(a => a.id === id);
 /* ---------- canvas sizing ---------- */
 function size() {
   const d = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+  if(!r.width || !r.height) return; // Prevent crashes on hidden canvas
   cv.width = r.width * d; cv.height = r.height * d; cx.setTransform(d, 0, 0, d, 0, 0); draw();
 }
 window.addEventListener('resize', () => { size(); size3(); });
@@ -376,7 +377,7 @@ splitter('#spr', '#panel', 'r', 240, 'ms-panel-w');
 /* ---------- 3D viewer ---------- */
 const c3 = $('#v3'), x3 = c3.getContext('2d');
 let m3 = null, dip3 = null, yaw = 0.6, pit = -0.35, zoom = 1, dirty = true, d3 = null;
-function size3() { const d = window.devicePixelRatio || 1, r = c3.getBoundingClientRect(); if (!r.width) return; c3.width = r.width * d; c3.height = r.height * d; x3.setTransform(d, 0, 0, d, 0, 0); dirty = true; }
+function size3() { const d = window.devicePixelRatio || 1, r = c3.getBoundingClientRect(); if (!r.width || !r.height) return; c3.width = r.width * d; c3.height = r.height * d; x3.setTransform(d, 0, 0, d, 0, 0); dirty = true; }
 function draw3() {
   const W = c3.clientWidth, H = c3.clientHeight; x3.clearRect(0, 0, W, H);
   if (!m3) { x3.fillStyle = '#94a3b8'; x3.font = '14px system-ui'; x3.textAlign = 'center'; x3.fillText('Draw a molecule, then press “Convert drawing to 3D”', W / 2, H / 2); return; }
@@ -455,5 +456,32 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
 });
 
 /* ---------- start ---------- */
-hist = [snap()]; hi = 0; update(); size(); size3(); loop();
+hist = [snap()]; hi = 0; update(); loop();
+
+/* ---------- Layout Mode Toggle ---------- */
+const modeBtn = $('#mode-toggle');
+function setMode(isMobile) {
+  if (isMobile) {
+    document.body.classList.remove('laptop-mode');
+    document.body.classList.add('mobile-mode');
+    modeBtn.innerHTML = '💻 Switch to Laptop View';
+  } else {
+    document.body.classList.remove('mobile-mode');
+    document.body.classList.add('laptop-mode');
+    modeBtn.innerHTML = '📱 Switch to Mobile View';
+  }
+  
+  // Force canvases to recalculate their bounding boxes after layout shift
+  setTimeout(() => {
+    window.dispatchEvent(new Event('resize')); 
+  }, 100);
+}
+
+// Ensure the mode button functions correctly when clicked
+if (modeBtn) {
+  modeBtn.onclick = () => setMode(document.body.classList.contains('laptop-mode'));
+}
+
+// Boot up directly into mobile mode to ensure UI builds correctly
+setMode(true);
 })();

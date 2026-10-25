@@ -192,3 +192,7 @@ body.mobile-mode #panel {
 body.laptop-mode main { min-height: 0; }
 body.laptop-mode { height: 100dvh; }
 body.laptop-mode #stage { min-height: 0; }
+select option {
+  background: #0f172a;
+  color: #f8fafc;
+}

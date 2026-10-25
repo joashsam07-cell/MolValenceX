@@ -184,3 +184,11 @@ body.mobile-mode #panel {
   border-left: none;
   padding: 16px;
 }
+/* --- Footer --- */
+#site-footer { flex: none; padding: 5px 12px; text-align: center; font-size: 11px; line-height: 1.35; color: #94a3b8; background: rgba(15,23,42,0.85); border-top: 1px solid rgba(255,255,255,0.08); position: relative; z-index: 30; }
+#site-footer p { margin: 0; }
+#site-footer a { color: #a5b4fc; }
+.chip.dpn { background: #64748b; } .chip.dpw { background: #0ea5e9; } .chip.dpp { background: #d97706; } .chip.dps { background: #dc2626; }
+body.laptop-mode main { min-height: 0; }
+body.laptop-mode { height: 100dvh; }
+body.laptop-mode #stage { min-height: 0; }

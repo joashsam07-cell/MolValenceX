@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MolValenceX – Free Online Molecule Drawer, Aromaticity, Dipole Moment &amp; 3D Viewer</title>
-<meta name="description" content="MolValenceX is a free online chemical structure editor: draw molecules, get molecular formula, molar mass and degree of unsaturation, check aromaticity with Hückel's rule, estimate dipole moment, and view 2D to 3D. Export MOL and XYZ. For students, organic chemistry and drug-discovery learning.">
-<meta name="keywords" content="MolValenceX, molecule drawer, chemical structure editor, online molecule editor, draw molecules online, organic chemistry tool, aromaticity checker, Huckel rule calculator, aromatic antiaromatic nonaromatic, dipole moment calculator, 2D to 3D molecule viewer, molecular formula calculator, molar mass calculator, degree of unsaturation calculator, MOL file export, XYZ file export, functional groups, heterocycles, benzene, pyridine, medicinal chemistry, pharmaceutical chemistry, drug discovery, drug-like molecules, pharmacophore, API structure, IUPAC name, chirality, stereochemistry">
+<meta name="description" content="MolValenceX is a free online chemical structure editor: draw molecules, get molecular formula, molar mass and degree of unsaturation, check aromaticity with Hückel's rule, estimate dipole moment, assign E/Z and R/S (CIP), check optical activity, estimate Hansen solubility parameters, and view 2D to 3D. Export MOL and XYZ. For students, organic chemistry and drug-discovery learning.">
+<meta name="keywords" content="MolValenceX, molecule drawer, chemical structure editor, online molecule editor, draw molecules online, organic chemistry tool, aromaticity checker, Huckel rule calculator, aromatic antiaromatic nonaromatic, dipole moment calculator, 2D to 3D molecule viewer, molecular formula calculator, molar mass calculator, degree of unsaturation calculator, MOL file export, XYZ file export, functional groups, heterocycles, benzene, pyridine, medicinal chemistry, pharmaceutical chemistry, drug discovery, drug-like molecules, pharmacophore, API structure, IUPAC name, chirality, stereochemistry, Hansen solubility parameters, Hildebrand solubility parameter, solvent selection">
 <meta name="author" content="Joash Sam">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="theme-color" content="#0f172a">
@@ -103,7 +103,8 @@
       <button id="dip" class="primary">Estimate dipole moment</button>
       <button id="ez" class="primary">Check E/Z, cis / trans</button>
       <button disabled title="Next phase">Determine IUPAC name (Soon)</button>
-      <button disabled title="Next phase">Check optical activity (Soon)</button>
+      <button id="rs" class="primary">Check R/S &amp; optical activity</button>
+      <button id="hsp" class="primary">Estimate solubility (Hansen)</button>
       <div id="result"></div>
     </div>
     <div id="tab-d" hidden>

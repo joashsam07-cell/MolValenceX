@@ -216,3 +216,9 @@ select option {
 #tour-card .tc-actions button { padding: 6px 12px; }
 
 .ring.ezE { border-color: #d97706; } .ring.ezZ { border-color: #0284c7; }
+
+.ring.rsR { border-color: #dc2626; } .ring.rsS { border-color: #2563eb; } .ring.rsU { border-color: #64748b; }
+
+.sol { display: inline-block; padding: 3px 9px; border-radius: 99px; margin: 2px 3px 2px 0; font-size: 12px; font-weight: 600; color: #fff; }
+.sol small { opacity: .8; font-weight: 400; }
+.sol.good { background: #16a34a; } .sol.partial { background: #d97706; } .sol.poor { background: #64748b; }

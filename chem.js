@@ -693,11 +693,9 @@
   /* ------------------------------------------------ E/Z (CIP priorities) */
   const ZNUM = { H: 1, Li: 3, B: 5, C: 6, N: 7, O: 8, F: 9, Na: 11, Mg: 12, Al: 13, Si: 14, P: 15, S: 16, Cl: 17, K: 19, Ca: 20, Se: 34, Br: 35, I: 53 };
 
-  // E/Z label for every acyclic C=C, C=N or N=N bond whose two ends each carry two different substituents.
-  // Priorities follow the CIP rules (atomic number, then sphere by sphere outwards, with duplicated atoms for
-  // multiple bonds and ring closures). Geometry is read from the 2D drawing.
-  function ezStereo(mol, g, rg) {
-    g = g || buildGraph(mol); rg = rg || findRings(g);
+  // CIP ranking helpers shared by E/Z and R/S. cmpSub(p, q, depth) > 0 when substituent p outranks q.
+  // A substituent node is {z, i, kind:'real'|'dup'|'H'|'lp', anc:[atoms from the stereo centre]}.
+  function cipTools(mol, g) {
     const Zof = i => ZNUM[mol.atoms[i].el] || 0;
     const kids = n => {
       if (n.kind !== 'real') return [];
@@ -727,6 +725,15 @@
       }
       return 0;
     }
+    return { Zof, cmpSub };
+  }
+
+  // E/Z label for every acyclic C=C, C=N or N=N bond whose two ends each carry two different substituents.
+  // Priorities follow the CIP rules (atomic number, then sphere by sphere outwards, with duplicated atoms for
+  // multiple bonds and ring closures). Geometry is read from the 2D drawing.
+  function ezStereo(mol, g, rg) {
+    g = g || buildGraph(mol); rg = rg || findRings(g);
+    const { Zof, cmpSub } = cipTools(mol, g);
     const bonds = []; let doubles = 0;
     g.bonds.forEach((bd, bi) => {
       if (bd.order !== 2 || rg.bondInRing[bi]) return;
@@ -757,6 +764,232 @@
     return { bonds, doubles };
   }
 
+  // Fischer projection: a centre drawn as a cross (neighbours along the four axis directions, no wedge / dash of
+  // its own). Horizontal bonds point towards the viewer, vertical bonds away. 3 drawn neighbours + implicit H: the H
+  // sits on the empty arm. Returns the 4 vectors in rank order, or null when the centre is not a Fischer cross.
+  function fischerVecs(mol, g, c, subs) {
+    const A = mol.atoms[c], arms = [[1, 0, 0.7], [0, 1, -0.7], [-1, 0, 0.7], [0, -1, -0.7]], used = new Set();
+    const arm = new Map();
+    for (const s of subs) {
+      if (s.i < 0) continue;
+      const ang = Math.atan2(-(mol.atoms[s.i].y - A.y), mol.atoms[s.i].x - A.x) * 180 / Math.PI;
+      let best = -1, bd = 1e9;
+      for (let k = 0; k < 4; k++) { let d = Math.abs(((ang - 90 * k) % 360 + 540) % 360 - 180); if (d < bd) { bd = d; best = k; } }
+      if (bd > 28 || used.has(best)) return null;
+      used.add(best); arm.set(s.i, best);
+    }
+    if (used.size < 3) return null;
+    const free = [0, 1, 2, 3].filter(k => !used.has(k));
+    return subs.map(s => s.i >= 0 ? arms[arm.get(s.i)] : arms[free[0]]);
+  }
+
+  /* --------------------------------------- R/S (CIP) and optical activity */
+  // Finds every sp3 stereocentre (C, Si, N+, P+ with four different substituents under the CIP rules) and assigns R/S
+  // from the wedge / dash bonds that START at the centre (narrow end on the centre), or, when a centre is drawn as a
+  // Fischer cross without wedges, from the Fischer convention. Then decides whether the molecule
+  // is chiral, using an internal-mirror (meso) test. Axial and planar chirality are not assessed.
+  function rsStereo(mol, g, rg) {
+    g = g || buildGraph(mol); rg = rg || findRings(g);
+    const { Zof, cmpSub } = cipTools(mol, g), n = mol.atoms.length;
+    const okEl = (el, q) => ((el === 'C' || el === 'Si') && q === 0) || ((el === 'N' || el === 'P') && q === 1);
+    const centres = [];
+    for (let c = 0; c < n; c++) {
+      const A = mol.atoms[c], nb = g.nbrs[c];
+      if (!okEl(A.el, A.charge || 0) || nb.some(e => e.order > 1) || nb.length + g.hc[c] !== 4 || g.hc[c] > 1) continue;
+      const subs = nb.map(e => ({ z: Zof(e.j), i: e.j, kind: 'real', anc: [c] }));
+      if (g.hc[c] === 1) subs.push({ z: 1, i: -1, kind: 'H' });
+      subs.sort((p, q) => cmpSub(q, p, 4));
+      let distinct = true;
+      for (let k = 0; k < 3; k++) if (cmpSub(subs[k], subs[k + 1], 4) === 0) distinct = false;
+      if (!distinct) continue;
+      // geometry: x right, y up (canvas y is flipped), z towards the viewer set by wedge (+) / dash (−)
+      const zOf = new Map(); let anyZ = false;
+      g.bonds.forEach(b => { if (b.stereo && b.i === c) { zOf.set(b.j, b.stereo === 1 ? 1 : -1); anyZ = true; } });
+      let V, fischer = false;
+      const fz = anyZ ? null : fischerVecs(mol, g, c, subs);
+      if (fz) { V = fz; fischer = true; }
+      else {
+        const vec = s => {
+          const dx = mol.atoms[s.i].x - A.x, dy = -(mol.atoms[s.i].y - A.y), l = Math.hypot(dx, dy) || 1;
+          return [dx / l, dy / l, (zOf.get(s.i) || 0) * 0.9];
+        };
+        V = subs.map(s => s.i >= 0 ? vec(s) : null);
+        if (V[3] === null) { let sm = [0, 0, 0]; for (let k = 0; k < 3; k++) sm = add(sm, unit(V[k])); V[3] = mul(sm, -1); }
+      }
+      let label = null;
+      if (anyZ || fischer) {
+        const d = [sub(V[0], V[3]), sub(V[1], V[3]), sub(V[2], V[3])], det = dot(d[0], cross(d[1], d[2]));
+        if (Math.abs(det) > 1e-3) label = det < 0 ? 'R' : 'S';
+      }
+      centres.push({ atom: c, label, order: subs.map(s => s.i), hasWedge: anyZ, fischer });
+    }
+    const out = { centres, chiral: null, meso: false, verdict: '' };
+    if (!centres.length) { out.chiral = false; out.verdict = 'none'; return out; }
+    if (centres.some(x => !x.label)) { out.verdict = 'undefined'; return out; }
+    if (centres.length === 1) { out.chiral = true; out.verdict = 'chiral'; return out; }
+    const mir = mirrorSymmetric(mol, g, centres, ezStereo(mol, g, rg).bonds);
+    if (mir === null) { out.verdict = 'unknown'; return out; }
+    out.meso = mir; out.chiral = !mir; out.verdict = mir ? 'meso' : 'chiral';
+    return out;
+  }
+
+  // true when some graph automorphism maps every stereocentre onto one of opposite label (the molecule equals its
+  // own mirror image, e.g. meso-tartaric acid); null when the search was cut off.
+  function mirrorSymmetric(mol, g, centres, ez) {
+    const n = mol.atoms.length, lab = new Map(centres.map(c => [c.atom, c.label]));
+    const flip = l => l === 'R' ? 'S' : 'R';
+    const ezOf = new Map(); ez.forEach(b => { ezOf.set(b.a + '|' + b.b, b.label); ezOf.set(b.b + '|' + b.a, b.label); });
+    let col = mol.atoms.map((a, i) => a.el + '|' + (a.charge || 0) + '|' + g.hc[i] + '|' + g.nbrs[i].length);
+    for (let r = 0; r < 6; r++) {
+      const nx = col.map((c, i) => c + '(' + g.nbrs[i].map(e => e.order + col[e.j]).sort().join(',') + ')');
+      const ids = new Map(); col = nx.map(s => { if (!ids.has(s)) ids.set(s, ids.size); return String(ids.get(s)); });
+    }
+    const order = [], seen = new Array(n).fill(false);
+    for (let s = 0; s < n; s++) {
+      if (seen[s]) continue; seen[s] = true; const q = [s];
+      for (let h = 0; h < q.length; h++) { order.push(q[h]); g.nbrs[q[h]].forEach(e => { if (!seen[e.j]) { seen[e.j] = true; q.push(e.j); } }); }
+    }
+    const map = new Array(n).fill(-1), used = new Array(n).fill(false), orderOf = (a, b) => { const e = g.nbrs[a].find(x => x.j === b); return e ? e.order : 0; };
+    let steps = 0, cut = false;
+    function fin() {
+      for (const [k, l] of ezOf) { const [a, b] = k.split('|').map(Number); if (ezOf.get(map[a] + '|' + map[b]) !== l) return false; }
+      return true;
+    }
+    function rec(k) {
+      if (cut) return false;
+      if (k === n) return fin();
+      if (++steps > 200000) { cut = true; return false; }
+      const u = order[k];
+      for (let v = 0; v < n; v++) {
+        if (used[v] || col[v] !== col[u]) continue;
+        const lu = lab.get(u), lv = lab.get(v);
+        if ((lu === undefined) !== (lv === undefined) || (lu !== undefined && lv !== flip(lu))) continue;
+        let ok = true;
+        for (const e of g.nbrs[u]) if (map[e.j] >= 0 && orderOf(v, map[e.j]) !== e.order) { ok = false; break; }
+        if (!ok) continue;
+        map[u] = v; used[v] = true;
+        if (rec(k + 1)) return true;
+        map[u] = -1; used[v] = false;
+      }
+      return false;
+    }
+    const res = rec(0);
+    return cut ? null : res;
+  }
+
+  /* ------------------------------------ Hansen solubility parameters (estimate) */
+  // Hoftyzer–Van Krevelen group contributions: [Fd, Fp, Eh, V]
+  //   Fd, Fp in J^0.5 cm^1.5 / mol, Eh in J / mol, V (molar volume increment) in cm^3 / mol.
+  //   dD = ΣFd / V     dP = sqrt(ΣFp²) / V     dH = sqrt(ΣEh / V)      (all in MPa^0.5)
+  const HVK = {
+    'CH3': [420, 0, 0, 33.5], 'CH2': [270, 0, 0, 16.1], 'CH': [80, 0, 0, -1.0], 'C': [-70, 0, 0, -19.2],
+    '=CH2': [400, 0, 0, 28.5], '=CH': [200, 0, 0, 13.5], '=C<': [70, 0, 0, -5.5],
+    'C6H5': [1430, 110, 0, 71.4], 'C6H4': [1270, 110, 0, 52.4],
+    'F': [220, 0, 0, 18.0], 'Cl': [450, 550, 400, 24.0], 'Br': [550, 0, 0, 30.0],
+    'CN': [430, 1100, 2500, 24.0], 'OH': [210, 500, 20000, 10.0], 'O': [100, 400, 3000, 3.8],
+    'COOH': [530, 420, 10000, 28.5], 'CO': [290, 770, 2000, 10.8], 'COO': [390, 490, 7000, 18.0],
+    'NH2': [280, 0, 8400, 19.2], 'NH': [160, 210, 3100, 4.5], 'NO2': [500, 1070, 1500, 32.0]
+  };
+  const HVK_PARTIAL = { 'F': 1, 'Br': 1 };   // polar / H-bond terms are not tabulated for these groups
+  // common solvents: [name, dD, dP, dH] in MPa^0.5 (Hansen)
+  const SOLV = [
+    ['Water', 15.5, 16.0, 42.3, 18.0], ['Methanol', 14.7, 12.3, 22.3, 40.7], ['Ethanol', 15.8, 8.8, 19.4, 58.5], ['1-Propanol', 16.0, 6.8, 17.4, 75.2],
+    ['2-Propanol', 15.8, 6.1, 16.4, 76.8], ['1-Butanol', 16.0, 5.7, 15.8, 91.5], ['Ethylene glycol', 17.0, 11.0, 26.0, 55.8], ['Glycerol', 17.4, 12.1, 29.3, 73.3],
+    ['Acetone', 15.5, 10.4, 7.0, 74.0], ['2-Butanone (MEK)', 16.0, 9.0, 5.1, 90.1], ['Ethyl acetate', 15.8, 5.3, 7.2, 98.5], ['Tetrahydrofuran', 16.8, 5.7, 8.0, 81.7],
+    ['Diethyl ether', 14.5, 2.9, 5.1, 104.8], ['1,4-Dioxane', 17.5, 1.8, 9.0, 85.7], ['Dichloromethane', 18.2, 6.3, 6.1, 63.9], ['Chloroform', 17.8, 3.1, 5.7, 80.7],
+    ['Carbon tetrachloride', 17.8, 0.0, 0.6, 97.1], ['Toluene', 18.0, 1.4, 2.0, 106.8], ['Benzene', 18.4, 0.0, 2.0, 89.4], ['n-Hexane', 14.9, 0.0, 0.0, 131.6],
+    ['n-Heptane', 15.3, 0.0, 0.0, 147.4], ['Cyclohexane', 16.8, 0.0, 0.2, 108.7], ['Acetonitrile', 15.3, 18.0, 6.1, 52.6], ['DMF', 17.4, 13.7, 11.3, 77.0],
+    ['DMSO', 18.4, 16.4, 10.2, 71.3], ['NMP', 18.0, 12.3, 7.2, 96.5], ['Acetic acid', 14.5, 8.0, 13.5, 57.1], ['Pyridine', 19.0, 8.8, 5.9, 80.9], ['Nitromethane', 15.8, 18.8, 5.1, 54.3]
+  ];
+  const RT = 8.314 * 298.15;   // J/mol at 25 °C
+
+  function hansen(mol, g, rg) {
+    g = g || buildGraph(mol); rg = rg || findRings(g);
+    const n = mol.atoms.length;
+    if (!n) return { supported: false, reason: 'Empty drawing.' };
+    if (mol.atoms.some(a => (a.charge || 0) !== 0 && !(a.el === 'N' || a.el === 'O'))) return { supported: false, reason: 'Charged species are not supported.' };
+    const ar = aromaticity(mol, g, rg), used = new Set(), groups = [], bad = [];
+    const el = i => mol.atoms[i].el, lab = i => el(i) + (i + 1);
+    const add1 = (name, atoms) => { groups.push({ name, atoms }); atoms.forEach(a => used.add(a)); };
+    // 1. benzene rings (mono- or di-substituted, not fused)
+    ar.rings.forEach(r => {
+      if (r.type !== 'aromatic' || r.size !== 6 || r.atoms.some(a => el(a) !== 'C')) return;
+      if (rg.systems[rg.ringSys[ar.rings.indexOf(r)]].length > 1) return;
+      const inRing = new Set(r.atoms);
+      const k = r.atoms.reduce((s, a) => s + g.nbrs[a].filter(e => !inRing.has(e.j)).length, 0);
+      if (k === 1) add1('C6H5', r.atoms.slice()); else if (k === 2) add1('C6H4', r.atoms.slice());
+      else bad.push('benzene ring with ' + k + ' substituent' + (k === 1 ? '' : 's') + ' (only mono- and di-substituted rings are tabulated)');
+    });
+    for (let i = 0; i < n; i++) if (!used.has(i) && ar.rings.some(r => r.type === 'aromatic' && r.atoms.includes(i))) { bad.push('aromatic or heteroaromatic ring other than a mono- / di-substituted benzene'); used.add(i); }
+    // 2. carbon-centred functional groups
+    for (let c = 0; c < n; c++) {
+      if (used.has(c) || el(c) !== 'C') continue;
+      const nb = g.nbrs[c], dO = nb.find(e => e.order === 2 && el(e.j) === 'O' && !used.has(e.j));
+      const nitrile = nb.find(e => e.order === 3 && el(e.j) === 'N');
+      if (nitrile) { add1('CN', [c, nitrile.j]); continue; }
+      if (!dO) continue;
+      const others = nb.filter(e => e !== dO), singles = others.filter(e => e.order === 1);
+      const oh = singles.find(e => el(e.j) === 'O' && g.hc[e.j] === 1 && g.nbrs[e.j].length === 1);
+      const oe = singles.find(e => el(e.j) === 'O' && g.hc[e.j] === 0 && g.nbrs[e.j].length === 2);
+      const nn = singles.find(e => el(e.j) === 'N');
+      if (nn) { bad.push('amide / carbamate-type group at ' + lab(c) + ' (not tabulated)'); [c, dO.j, nn.j].forEach(a => used.add(a)); }
+      else if (oh && singles.every(e => e === oh || el(e.j) === 'C') && others.length <= 2) add1('COOH', [c, dO.j, oh.j]);
+      else if (oe && others.length === 2 && singles.every(e => el(e.j) === 'C' || e === oe) ) add1('COO', [c, dO.j, oe.j]);
+      else if (g.hc[c] === 1 && others.length === 1) { bad.push('aldehyde at ' + lab(c) + ' (not reliably tabulated)'); [c, dO.j].forEach(a => used.add(a)); }
+      else if (others.length === 2 && singles.length === 2 && singles.every(e => el(e.j) === 'C')) add1('CO', [c, dO.j]);
+      else { bad.push('carbonyl group at ' + lab(c) + ' (not tabulated)'); [c, dO.j].forEach(a => used.add(a)); }
+    }
+    // 3. N and O groups, halogens, other elements (nitro groups first, so their oxygens are not read as stray O−)
+    for (let i = 0; i < n; i++) {
+      if (used.has(i) || el(i) !== 'N' || (mol.atoms[i].charge || 0) !== 1) continue;
+      const os = g.nbrs[i].filter(x => el(x.j) === 'O');
+      if (os.length === 2 && g.nbrs[i].length === 3 && g.nbrs[i].filter(x => el(x.j) === 'C').length === 1) add1('NO2', [i].concat(os.map(x => x.j)));
+    }
+    for (let i = 0; i < n; i++) {
+      if (used.has(i)) continue;
+      const e = el(i), nb = g.nbrs[i], h = g.hc[i];
+      if (e === 'N') {
+        if (nb.some(x => x.order > 1) || (mol.atoms[i].charge || 0)) { bad.push('unsaturated / charged nitrogen ' + lab(i)); used.add(i); continue; }
+        if (h === 2) add1('NH2', [i]); else if (h === 1) add1('NH', [i]); else { bad.push('tertiary amine ' + lab(i) + ' (not tabulated)'); used.add(i); }
+      } else if (e === 'O') {
+        if ((mol.atoms[i].charge || 0) || nb.some(x => x.order > 1)) { bad.push('unusual oxygen ' + lab(i)); used.add(i); }
+        else if (h === 1) add1('OH', [i]); else if (nb.length === 2) add1('O', [i]); else { bad.push(nb.length ? 'oxygen ' + lab(i) : 'water / free oxygen (not tabulated)'); used.add(i); }
+      } else if (e === 'F' || e === 'Cl' || e === 'Br') add1(e, [i]);
+      else if (e !== 'C') { bad.push('element ' + e + ' (' + lab(i) + ')'); used.add(i); }
+    }
+    // 4. remaining carbons: CH3 / CH2 / CH / C and alkene carbons
+    for (let c = 0; c < n; c++) {
+      if (used.has(c) || el(c) !== 'C') continue;
+      const nb = g.nbrs[c], h = g.hc[c];
+      if (nb.some(e => e.order === 3) || nb.filter(e => e.order === 2).length > 1) { bad.push('alkyne / allene carbon ' + lab(c) + ' (not tabulated)'); used.add(c); continue; }
+      if (nb.some(e => e.order === 2)) { add1(h === 2 ? '=CH2' : h === 1 ? '=CH' : '=C<', [c]); continue; }
+      if (h === 4) { bad.push('methane (single carbon)'); used.add(c); continue; }
+      add1(h === 3 ? 'CH3' : h === 2 ? 'CH2' : h === 1 ? 'CH' : 'C', [c]);
+    }
+    if (bad.length) return { supported: false, reason: 'Contains parts without group-contribution data: ' + Array.from(new Set(bad)).slice(0, 4).join('; ') + '.', unsupported: bad };
+    let Fd = 0, Fp2 = 0, Eh = 0, V = 0; const partial = [], counts = {};
+    groups.forEach(gr => { const p = HVK[gr.name]; Fd += p[0]; Fp2 += p[1] * p[1]; Eh += p[2]; V += p[3]; counts[gr.name] = (counts[gr.name] || 0) + 1; if (HVK_PARTIAL[gr.name] && partial.indexOf(gr.name) < 0) partial.push(gr.name); });
+    if (V < 5) return { supported: false, reason: 'The molecule is too small or too branched for the molar-volume increments to give a sensible result.' };
+    // several chlorines on one carbon partly cancel (empirical factors fitted to CH2Cl2, CHCl3, CCl4)
+    const notes = [], ps = [0, 1, 0.73, 0.4, 0];
+    const clOn = new Map(); groups.forEach(x => { if (x.name === 'Cl') { const c = g.nbrs[x.atoms[0]][0]; if (c) clOn.set(c.j, (clOn.get(c.j) || 0) + 1); } });
+    clOn.forEach(k => { if (k >= 2) { const fp = HVK.Cl[1]; Fp2 += Math.pow(fp * ps[Math.min(k, 4)], 2) - k * fp * fp; notes.push('Several Cl on one carbon: polar term reduced with an empirical factor.'); } });
+    let dD = Fd / V, dP = Math.sqrt(Math.max(Fp2, 0)) / V, dH = Math.sqrt(Math.max(Eh, 0) / V), dT;
+    if (dP > 3 && !groups.some(x => ['OH', 'NH2', 'NH', 'COOH'].includes(x.name))) {   // symmetric molecules: polar groups cancel (Van Krevelen symmetry rule)
+      let mu = null; try { const d = dipole(mol); if (d.supported) mu = d.mu; } catch (e) { mu = null; }
+      if (mu !== null && mu < 0.5) { dP *= 0.25; notes.push('Polar groups cancel by symmetry (dipole ≈ 0): δP scaled by 0.25.'); }
+    }
+    dT = Math.sqrt(dD * dD + dP * dP + dH * dH);
+    // Flory–Huggins: chi = Vs·Ra² / (4RT); two liquids / a solute and a solvent mix when chi < chi_c = 0.5·(1 + 1/√n)²,
+    // n = molar volume of the solute / molar volume of the solvent (small molecules tolerate a much larger Ra than polymers).
+    const rows = SOLV.map(s => {
+      const ra = Math.sqrt(4 * (dD - s[1]) * (dD - s[1]) + (dP - s[2]) * (dP - s[2]) + (dH - s[3]) * (dH - s[3]));
+      const chi = s[4] * ra * ra / (4 * RT), nn = Math.max(V / s[4], 0.2), chic = 0.5 * Math.pow(1 + 1 / Math.sqrt(nn), 2), red = chi / chic;
+      return { name: s[0], ra, chi, chic, red, verdict: red < 1 ? 'good' : red < 1.5 ? 'partial' : 'poor' };
+    }).sort((a, b) => a.red - b.red);
+    return { supported: true, dD, dP, dH, dT, V, groups: counts, partial, notes, rows };
+  }
+
   /* --------------------------------------------------------- file export */
   function toMolBlock(mol, Lpx) {
     const L = Lpx || 40, f = x => x.toFixed(4).padStart(10);
@@ -776,6 +1009,6 @@
     return out.join('\n');
   }
 
-  root.Chem = { EL, valences, buildGraph, formula, findRings, aromaticity, clean2D, embed3D, dipole, ezStereo, toMolBlock, toXYZ, _params: { PI_DONOR } };
+  root.Chem = { EL, valences, buildGraph, formula, findRings, aromaticity, clean2D, embed3D, dipole, ezStereo, rsStereo, hansen, toMolBlock, toXYZ, _params: { PI_DONOR } };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.Chem;
 })(typeof window !== 'undefined' ? window : globalThis);

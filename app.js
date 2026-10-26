@@ -3,12 +3,12 @@
 const C = window.Chem, $ = s => document.querySelector(s), BL = 40;
 const cv = $('#ed'), cx = cv.getContext('2d');
 let mol = { atoms: [], bonds: [] }, nid = 1, ver = 0, tool = 'bond', vr = { o: 1, s: 0 }, el = 'C';
-let sel = null, drag = null, an = null, ezr = null, hist = [], hi = -1, cache = null;
+let sel = null, drag = null, an = null, ezr = null, rsr = null, hist = [], hi = -1, cache = null;
 
 /* ---------- state / history ---------- */
 const snap = () => JSON.stringify({ m: mol, n: nid });
 function commit() { hist = hist.slice(0, hi + 1); hist.push(snap()); hi = hist.length - 1; changed(); }
-function changed() { ver++; an = null; ezr = null; update(); draw(); }
+function changed() { ver++; an = null; ezr = rsr = null; update(); draw(); }
 function restore() { const s = JSON.parse(hist[hi]); mol = s.m; nid = s.n; sel = null; changed(); }
 function undo() { if (hi > 0) { hi--; restore(); } }
 function redo() { if (hi < hist.length - 1) { hi++; restore(); } }
@@ -37,7 +37,7 @@ function bondAt(p) {
 }
 
 /* ---------- editing ---------- */
-function addAtom(e, x, y) { const a = { id: nid++, el: e, x, y, charge: 0 }; mol.atoms.push(a); ver++; an = null; ezr = null; return a; }
+function addAtom(e, x, y) { const a = { id: nid++, el: e, x, y, charge: 0 }; mol.atoms.push(a); ver++; an = null; ezr = rsr = null; return a; }
 function setBond(ex, v, from) {
   if (v.s) {
     if (ex.stereo === v.s && ex.a === from.id) { [ex.a, ex.b] = [ex.b, ex.a]; }
@@ -96,7 +96,7 @@ cv.onpointermove = e => {
   if (!drag) return;
   const p = P(e), dx = p.x - drag.x, dy = p.y - drag.y;
   if (Math.hypot(dx, dy) > 4) drag.moved = true;
-  if (drag.m === 'move') { drag.a.x += dx; drag.a.y += dy; drag.x = p.x; drag.y = p.y; ver++; an = null; ezr = null; }
+  if (drag.m === 'move') { drag.a.x += dx; drag.a.y += dy; drag.x = p.x; drag.y = p.y; ver++; an = null; ezr = rsr = null; }
   else if (drag.m === 'pan') { mol.atoms.forEach(a => { a.x += dx; a.y += dy; }); drag.x = p.x; drag.y = p.y; }
   else drag.end = bondEnd(drag, p);
   draw();
@@ -172,6 +172,14 @@ function draw() {
     const lx = (p.x + q.x) / 2 + dy * 18 * sg, ly = (p.y + q.y) / 2 - dx * 18 * sg;
     cx.fillStyle = r.label === 'E' ? '#d97706' : '#0284c7'; cx.beginPath(); cx.roundRect ? cx.roundRect(lx - 12, ly - 10, 24, 20, 8) : cx.rect(lx - 12, ly - 10, 24, 20); cx.fill();
     cx.fillStyle = '#fff'; cx.font = 'bold 13px system-ui'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(r.label, lx, ly + 1); cx.textBaseline = 'alphabetic';
+  });
+  if (rsr) rsr.forEach(r => {
+    const p = A[r.atom]; if (!p) return;
+    let sx = 0, sy = 0; g.nbrs[r.atom].forEach(e => { const q = A[e.j]; const l = Math.hypot(q.x - p.x, q.y - p.y) || 1; sx += (q.x - p.x) / l; sy += (q.y - p.y) / l; });
+    let l = Math.hypot(sx, sy); if (l < 0.3) { sx = 0; sy = -1; l = 1; }
+    const lx = p.x - sx / l * 24, ly = p.y - sy / l * 24, t = r.label || '?';
+    cx.fillStyle = r.label === 'R' ? '#dc2626' : r.label === 'S' ? '#2563eb' : '#64748b'; cx.beginPath(); cx.roundRect ? cx.roundRect(lx - 11, ly - 10, 22, 20, 8) : cx.rect(lx - 11, ly - 10, 22, 20); cx.fill();
+    cx.fillStyle = '#fff'; cx.font = 'bold 13px system-ui'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(t, lx, ly + 1); cx.textBaseline = 'alphabetic';
   });
   if (drag && drag.m === 'bond' && drag.end) {
     cx.strokeStyle = '#6366f1'; cx.setLineDash([5, 4]); line(drag.s.x, drag.s.y, drag.end.x, drag.end.y, 2); cx.setLineDash([]);
@@ -256,6 +264,13 @@ function fuse(b, ids0, i, j, n, els, ord, away) {
   ids.forEach((id, k) => b.b(id, ids[(k + 1) % n], ord[k])); return ids;
 }
 const K6 = [2, 1, 2, 1, 2, 1], K5 = [1, 2, 1, 2, 1], K7 = [1, 2, 1, 2, 1, 2, 1];
+function fischer(b, x, y, top, rows, bot) {   // vertical Fischer chain; rows = [side 'R'|'L', element] per stereocentre
+  const h = BL * 0.87, ids = [], at = (el, xx, yy) => b.a(el, xx, yy);
+  const t = at('C', x, y); b.b(t, at('O', x + h, y - BL / 2), 2); if (top === 'COOH') b.b(t, at('O', x - h, y - BL / 2)); ids.push(t);
+  rows.forEach((r, k) => { const yy = y + BL * (k + 1), c = at('C', x, yy); b.b(ids[ids.length - 1], c); b.b(c, at(r[1], x + (r[0] === 'R' ? BL : -BL), yy)); ids.push(c); });
+  const yb = y + BL * (rows.length + 1), e = at('C', x, yb); b.b(ids[ids.length - 1], e);
+  if (bot === 'COOH') { b.b(e, at('O', x + h, yb + BL / 2), 2); b.b(e, at('O', x - h, yb + BL / 2)); } else b.b(e, at('O', x + h, yb + BL / 2));
+}
 const EX = {
   'Benzene': b => ring(b, 300, 250, 6, [], K6),
   'Naphthalene': b => { const a = ring(b, 260, 250, 6, [], K6); fuse(b, a, a[1], a[2], 6, [], [1, 1, 2, 1, 2, 1], cen2(b, a)); },
@@ -273,6 +288,16 @@ const EX = {
   'Tropone': b => { const a = ring(b, 300, 250, 7, [], K7), p = b.pos(a[0]); b.b(a[0], b.a('O', p.x, p.y - BL), 2); },
   'Cyclohexane': b => ring(b, 300, 250, 6, [], [1, 1, 1, 1, 1, 1]),
   'CHFClBr (wedge F)': b => { const c = b.a('C', 300, 250), h = BL * 0.87; b.b(c, b.a('Br', 300 - h, 230)); b.b(c, b.a('Cl', 300 + h, 230)); b.b(c, b.a('F', 300, 250 + BL), 1, 1); },
+  'L-alanine (S)': b => { const c = b.a('C', 300, 250), h = BL * 0.87; b.b(c, b.a('N', 300 - h, 230)); b.b(c, b.a('C', 300 + h, 230)); b.b(c, b.a('C', 300, 250 + BL), 1, 2); const k = b.pos(b.m.bonds[1].b); b.b(b.m.bonds[1].b, b.a('O', k.x + h, k.y - BL / 2), 2); b.b(b.m.bonds[1].b, b.a('O', k.x, k.y - BL)); },
+  'meso-tartaric acid': b => { const c1 = b.a('C', 260, 250), c2 = b.a('C', 340, 250), h = BL * 0.87; b.b(c1, c2); b.b(c1, b.a('O', 260 - 10, 250 - BL), 1, 1); b.b(c2, b.a('O', 340 + 10, 250 - BL), 1, 1); const a1 = b.a('C', 260 - h, 250 + BL / 2), a2 = b.a('C', 340 + h, 250 + BL / 2); b.b(c1, a1); b.b(c2, a2); b.b(a1, b.a('O', 260 - h, 250 + BL * 1.5), 2); b.b(a1, b.a('O', 260 - 2 * h, 250 + BL / 2 - 0)); b.b(a2, b.a('O', 340 + h, 250 + BL * 1.5), 2); b.b(a2, b.a('O', 340 + 2 * h, 250 + BL / 2)); },
+  'D-glyceraldehyde (Fischer, R)': b => fischer(b, 300, 130, 'CHO', [['R', 'O']], 'CH2OH'),
+  'D-glucose (Fischer)': b => fischer(b, 300, 70, 'CHO', [['R', 'O'], ['L', 'O'], ['R', 'O'], ['R', 'O']], 'CH2OH'),
+  'meso-tartaric acid (Fischer)': b => fischer(b, 300, 110, 'COOH', [['R', 'O'], ['R', 'O']], 'COOH'),
+  'Ethanol': b => { const h = BL * 0.87, v = BL * 0.5, c1 = b.a('C', 240, 270), c2 = b.a('C', 240 + h, 270 - v), o = b.a('O', 240 + 2 * h, 270); b.b(c1, c2); b.b(c2, o); },
+  'Ethyl acetate': b => { const h = BL * 0.87, v = BL * 0.5, x = 200, y = 270, m1 = b.a('C', x, y), c = b.a('C', x + h, y - v), o1 = b.a('O', x + h, y - v - BL), o2 = b.a('O', x + 2 * h, y), e1 = b.a('C', x + 3 * h, y - v), e2 = b.a('C', x + 4 * h, y); b.b(m1, c); b.b(c, o1, 2); b.b(c, o2); b.b(o2, e1); b.b(e1, e2); },
+  'Aspirin': b => { const h = BL * 0.87, v = BL * 0.5, a = ring(b, 300, 250, 6, [], K6), p0 = b.pos(a[0]), p5 = b.pos(a[5]);
+    const c1 = b.a('C', p0.x, p0.y - BL); b.b(a[0], c1); b.b(c1, b.a('O', p0.x + h, p0.y - BL - v), 2); b.b(c1, b.a('O', p0.x - h, p0.y - BL - v));
+    const o = b.a('O', p5.x - h, p5.y - v), c2 = b.a('C', p5.x - 2 * h, p5.y); b.b(a[5], o); b.b(o, c2); b.b(c2, b.a('O', p5.x - 2 * h, p5.y + BL), 2); b.b(c2, b.a('C', p5.x - 3 * h, p5.y - v)); },
   'trans-2-butene': b => { const c = [b.a('C', 220, 285), b.a('C', 240, 250), b.a('C', 280, 250), b.a('C', 300, 215)]; b.b(c[0], c[1]); b.b(c[1], c[2], 2); b.b(c[2], c[3]); },
   'cis-2-butene': b => { const c = [b.a('C', 220, 285), b.a('C', 240, 250), b.a('C', 280, 250), b.a('C', 300, 285)]; b.b(c[0], c[1]); b.b(c[1], c[2], 2); b.b(c[2], c[3]); }
 };
@@ -465,6 +490,47 @@ $('#ez').onclick = () => {
   h += '<div class="hint">Priorities follow the CIP rules (atomic number, then outwards sphere by sphere, duplicating atoms for multiple bonds). Ring double bonds and cumulenes are not assessed. Labels are drawn on the canvas.</div>';
   out.innerHTML = h; draw();
 };
+$('#rs').onclick = () => {
+  const out = $('#result');
+  if (!mol.atoms.length) { out.innerHTML = '<div class="warn">Draw a molecule first.</div>'; return; }
+  const { g, rg } = G(), r = C.rsStereo(mol, g, rg), lab = i => i < 0 ? 'H' : mol.atoms[i].el + (i + 1);
+  const bad = mol.atoms.map((a, i) => g.ok[i] ? '' : a.el + (i + 1)).filter(Boolean);
+  rsr = r.centres.length ? r.centres : null;
+  let h = bad.length ? '<div class="warn">Over-valent atom(s): ' + bad.join(', ') + ' — results may be unreliable.</div>' : '';
+  r.centres.forEach(c => {
+    const pr = c.order.map((x, k) => (k + 1) + ' ' + lab(x)).join(' › ');
+    h += '<div class="ring rs' + (c.label || 'U') + '"><b>' + lab(c.atom) + ' · ' + (c.label ? c.label + (c.label === 'R' ? ' (rectus)' : ' (sinister)') : 'configuration not defined') + '</b><br>' +
+      'Priorities: ' + pr + (c.label ? '' : '<br><small>Draw a wedge or dash bond that <b>starts at this atom</b> (drag from the stereocentre outwards), or draw it as a Fischer cross (bonds straight up, down, left, right), to fix its 3D arrangement.</small>') + '</div>';
+  });
+  const chip = (cls, t) => '<span class="chip ' + cls + '">' + t + '</span>';
+  const n = r.centres.length;
+  if (r.verdict === 'none') h += chip('nonaromatic', 'No stereocentre') + '<div>No sp³ atom with four different groups was found, so there are no R/S centres and the molecule is <b>not optically active</b> by this check.</div>';
+  else if (r.verdict === 'undefined') h += chip('mixed', 'Configuration not drawn') + '<div>' + n + ' stereocentre(s) found but not all have a wedge / dash, so R/S and optical activity cannot be decided yet.</div>';
+  else if (r.verdict === 'unknown') h += chip('mixed', 'Could not decide') + '<div>The symmetry search was too large to finish, so the meso test is not available for this molecule.</div>';
+  else if (r.verdict === 'meso') h += chip('nonaromatic', 'Meso: optically inactive') + '<div>The molecule has ' + n + ' stereocentres but is identical to its own mirror image (internal mirror symmetry), so it is <b>achiral</b> and does not rotate plane-polarised light.</div>';
+  else h += chip('aromatic', 'Chiral: optically active') + '<div>This molecule is not superimposable on its mirror image, so a single pure enantiomer <b>rotates plane-polarised light</b>. Its mirror image has every label inverted' + (n > 1 ? '; up to 2<sup>' + n + '</sup> = ' + Math.pow(2, n) + ' stereoisomers are possible' : '') + '. The sign (+ / −) cannot be predicted from the structure; it has to be measured. A 50:50 racemic mixture shows no net rotation.</div>';
+  h += '<div class="hint">R / S come from CIP priorities (atomic number, then outwards sphere by sphere) and the wedge / dash bonds starting at each centre, or the Fischer convention (horizontal bonds towards you, vertical away) for centres drawn as a cross. Fischer layouts are not used by the 3D view. Axial and planar chirality (allenes, biaryls, helicenes) and pseudo-asymmetric r / s centres are not assessed. Labels are drawn on the canvas.</div>';
+  out.innerHTML = h; draw();
+};
+$('#hsp').onclick = () => {
+  const out = $('#result');
+  if (!mol.atoms.length) { out.innerHTML = '<div class="warn">Draw a molecule first.</div>'; return; }
+  const { g, rg } = G(), bad = mol.atoms.map((a, i) => g.ok[i] ? '' : a.el + (i + 1)).filter(Boolean);
+  let r; try { r = C.hansen(mol, g, rg); } catch (er) { out.innerHTML = '<div class="warn">Could not compute this structure.</div>'; return; }
+  const warn = bad.length ? '<div class="warn">Over-valent atom(s): ' + bad.join(', ') + ' — results may be unreliable.</div>' : '';
+  if (!r.supported) { out.innerHTML = warn + '<div class="warn">' + r.reason + '</div><div class="hint">The group-contribution method covers alkanes, alkenes, alcohols, ethers, ketones, acids, esters, nitriles, nitro compounds, simple amines, Cl / F / Br compounds and mono- or di-substituted benzene rings.</div>'; return; }
+  const f1 = x => x.toFixed(1), grp = Object.keys(r.groups).map(k => k + (r.groups[k] > 1 ? ' ×' + r.groups[k] : '')).join(', ');
+  const list = (v, title) => { const rows = r.rows.filter(x => x.verdict === v); return '<div class="lbl" style="margin-top:8px">' + title + '</div>' + (rows.length ? rows.map(x => '<span class="sol ' + v + '" title="Ra = ' + f1(x.ra) + ', chi = ' + x.chi.toFixed(2) + ' (limit ' + x.chic.toFixed(2) + ')">' + x.name + ' <small>' + f1(x.ra) + '</small></span>').join('') : '<div class="hint">none</div>'); };
+  let h = warn + '<div class="card"><div class="lbl">Hansen solubility parameters (estimate, MPa<sup>½</sup>)</div>' +
+    '<div class="row"><span>δD dispersion</span><b>' + f1(r.dD) + '</b></div><div class="row"><span>δP polar</span><b>' + f1(r.dP) + '</b></div>' +
+    '<div class="row"><span>δH hydrogen bonding</span><b>' + f1(r.dH) + '</b></div><div class="row"><span>δT total (Hildebrand)</span><b>' + f1(r.dT) + '</b></div>' +
+    '<div class="hint" style="margin-top:6px">Groups used: ' + grp + '</div></div>';
+  if (r.partial.length) h += '<div class="warn">' + r.partial.join(', ') + ': only the dispersion term is tabulated, so δP / δH are underestimated.</div>';
+  r.notes.forEach(n => { h += '<div class="warn">' + n + '</div>'; });
+  h += list('good', 'Likely to dissolve / mix') + list('partial', 'Borderline') + list('poor', 'Unlikely');
+  h += '<div class="hint" style="margin-top:8px">Chip numbers are the Hansen distance Ra = √(4ΔδD² + ΔδP² + ΔδH²) (smaller = more alike). Verdicts use the Flory–Huggins test χ = V<sub>solvent</sub>·Ra² / (4RT) against the mixing limit χ<sub>c</sub>, which depends on the size of your molecule, so small molecules mix with a wider range of solvents than large ones. δD, δP, δH come from Hoftyzer–Van Krevelen group contributions (typical error about 1 MPa<sup>½</sup> for common liquids). “Like dissolves like” only: water is predicted poorly, and crystal lattice energy, ionisation, temperature and concentration are ignored, so use it to compare solvents, not to predict a solubility value.</div>';
+  out.innerHTML = h;
+};
 $('#dip').onclick = () => {
   const out = $('#result');
   if (!mol.atoms.length) { out.innerHTML = '<div class="warn">Draw a molecule first.</div>'; return; }
@@ -508,7 +574,9 @@ const STEPS = [
   { sel: '#arom', tab: 'a', demo: true, run: () => $('#arom').click(), t: 'Determine aromaticity', x: 'Applies <b>Hückel\'s rule</b> ring by ring: <span style="color:#4ade80">aromatic</span> (4n+2 π electrons), <span style="color:#f87171">anti-aromatic</span> (4n) or <span style="color:#cbd5e1">non-aromatic</span>. Rings are shaded on the canvas with their π-electron count, and the reasoning is listed below.' },
   { sel: '#dip', tab: 'a', demo: true, run: () => $('#dip').click(), t: 'Estimate dipole moment', x: 'Adds up bond dipoles on a quick 3D geometry and reports the value in debye with a polarity class. A rough estimate (typically ±0.3–0.5 D), not defined for ions. The arrow is drawn in the 3D view.' },
   { sel: '#ez', tab: 'a', demoEx: 'cis-2-butene', run: () => $('#ez').click(), t: 'E / Z and cis / trans', x: 'Finds every acyclic <b>C=C, C=N or N=N</b> double bond, ranks the groups on each end by <b>CIP rules</b> and labels it <b>E</b> or <b>Z</b> (plus cis / trans for simple alkenes). The labels appear on the canvas. A cis-2-butene demo is drawn here.' },
-  { sel: '#tab-a button[disabled]', tab: 'a', t: 'Coming soon', x: '<b>IUPAC naming</b> and <b>optical activity</b> are planned for a later version.' },
+  { sel: '#rs', tab: 'a', demoEx: 'D-glucose (Fischer)', run: () => $('#rs').click(), t: 'R / S and optical activity', x: 'Finds every <b>stereocentre</b> (sp³ atom with four different groups), ranks the groups by <b>CIP rules</b> and uses your <b>wedge / dash</b> bonds, or a <b>Fischer cross</b> (horizontal = towards you, vertical = away), to label it <b>R</b> or <b>S</b>. It then tells you if the molecule is <b>chiral (optically active)</b>, <b>meso</b> or has no stereocentre. D-glucose in Fischer form is drawn as a demo.' },
+  { sel: '#hsp', tab: 'a', demoEx: 'Ethyl acetate', run: () => $('#hsp').click(), t: 'Solubility (Hansen)', x: 'Adds up <b>group contributions</b> to estimate the Hansen parameters <b>δD, δP, δH</b> (and the Hildebrand δT), then ranks 29 common solvents by their Hansen distance <b>Ra</b> and a size-aware Flory–Huggins test. Solvents close to the molecule are the likely ones to dissolve it. A rough <b>like-dissolves-like</b> guide; ethyl acetate is drawn as a demo.' },
+  { sel: '#tab-a button[disabled]', tab: 'a', t: 'Coming soon', x: '<b>IUPAC naming</b> is planned for a later version.' },
   { sel: '#to3d', tab: 'd', demo: true, t: '3D view', x: '<b>Convert drawing to 3D</b> builds a 3D model from your 2D sketch. Wedge and dash bonds are used to set chirality.' },
   { sel: '.canvas-container-3d', tab: 'd', demo: true, run: () => $('#to3d').click(), t: '3D viewer', x: '<b>Drag</b> to rotate, <b>scroll</b> to zoom. The yellow arrow is the dipole moment (δ+ → δ−).' },
   { sel: '.row3', tab: 'd', t: 'Display options', x: 'Switch between <b>Ball &amp; stick</b>, <b>Sticks</b> and <b>Space-filling</b>; show or hide H, atom labels, auto-spin and the dipole arrow.' },

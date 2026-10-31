@@ -238,13 +238,14 @@ $('#impsmi').onclick = () => {
   const W = cv.clientWidth || 600, H = cv.clientHeight || 400; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   r.atoms.forEach(a => { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
   const dx = W / 2 - (x0 + x1) / 2, dy = H / 2 - (y0 + y1) / 2; nid = 1; const ids = r.atoms.map(() => nid++);
-  mol = { atoms: r.atoms.map((a, i) => ({ id: ids[i], el: a.el, x: a.x + dx, y: a.y + dy, charge: a.charge || 0 })), bonds: r.bonds.map(b => ({ id: nid++, a: ids[b.a], b: ids[b.b], order: b.order, stereo: 0 })) };
+  mol = { atoms: r.atoms.map((a, i) => ({ id: ids[i], el: a.el, x: a.x + dx, y: a.y + dy, charge: a.charge || 0 })), bonds: r.bonds.map(b => ({ id: nid++, a: ids[b.a], b: ids[b.b], order: b.order, stereo: b.stereo || 0 })) };   // stereo 1 / 2 = wedge / dash, narrow end at a
   sel = null; commit();
+  if (r.skippedStereo) alert('The structure was drawn, but the stereochemistry of ' + r.skippedStereo + ' centre' + (r.skippedStereo > 1 ? 's' : '') + ' could not be shown as a wedge / dash (unusual bonding or crowded geometry).');
 };
 $('#expsmi').onclick = () => {
   if (!mol.atoms.length) { alert('Draw a molecule first.'); return; }
   const s = C.toSMILES(mol);
-  try { navigator.clipboard.writeText(s); } catch (er) {}
+  try { navigator.clipboard.writeText(s).catch(() => {}); } catch (er) {}
   prompt('SMILES (also copied to clipboard):', s);
 };
 window.addEventListener('keydown', e => {
@@ -533,17 +534,20 @@ $('#hsp').onclick = () => {
   const { g, rg } = G(), bad = mol.atoms.map((a, i) => g.ok[i] ? '' : a.el + (i + 1)).filter(Boolean);
   let r; try { r = C.hansen(mol, g, rg); } catch (er) { out.innerHTML = '<div class="warn">Could not compute this structure.</div>'; return; }
   const warn = bad.length ? '<div class="warn">Over-valent atom(s): ' + bad.join(', ') + ' — results may be unreliable.</div>' : '';
-  if (!r.supported) { out.innerHTML = warn + '<div class="warn">' + r.reason + '</div><div class="hint">The group-contribution method covers alkanes, alkenes, alcohols, ethers, ketones, acids, esters, nitriles, nitro compounds, simple primary / secondary amines, primary / secondary amides, Cl / F / Br compounds and benzene rings with up to 4 substituents (including plain benzene). Not yet covered: fused or heteroaromatic rings, tertiary amines and amides, aldehydes, ureas / carbamates.</div>'; return; }
+  if (!r.supported) { out.innerHTML = warn + '<div class="warn">' + r.reason + '</div><div class="hint">Covered: hydrocarbons (including alkenes, alkynes, benzene and naphthalene-type fused rings), alcohols and phenols, ethers, aldehydes, ketones, acids, esters, nitriles, nitro compounds, primary / secondary / tertiary amines, N,N-dimethylamides, pyridine-type rings, furan, thiophene and halogen compounds. Not covered: N–H heterocycles (pyrrole, indole, imidazole), ring C=O on aromatic rings (pyridones, xanthines, uracils), ureas, carbamates, carbonates, sulfoxides, formates, charged species and elements other than C, H, N, O, S and the halogens.</div>'; return; }
   const f1 = x => x.toFixed(1), grp = Object.keys(r.groups).map(k => k + (r.groups[k] > 1 ? ' ×' + r.groups[k] : '')).join(', ');
   const list = (v, title) => { const rows = r.rows.filter(x => x.verdict === v); return '<div class="lbl" style="margin-top:8px">' + title + '</div>' + (rows.length ? rows.map(x => '<span class="sol ' + v + '" title="Ra = ' + f1(x.ra) + ', chi = ' + x.chi.toFixed(2) + ' (limit ' + x.chic.toFixed(2) + ')">' + x.name + ' <small>' + f1(x.ra) + '</small></span>').join('') : '<div class="hint">none</div>'); };
   let h = warn + '<div class="card"><div class="lbl">Hansen solubility parameters (estimate, MPa<sup>½</sup>)</div>' +
     '<div class="row"><span>δD dispersion</span><b>' + f1(r.dD) + '</b></div><div class="row"><span>δP polar</span><b>' + f1(r.dP) + '</b></div>' +
     '<div class="row"><span>δH hydrogen bonding</span><b>' + f1(r.dH) + '</b></div><div class="row"><span>δT total (Hildebrand)</span><b>' + f1(r.dT) + '</b></div>' +
+    '<div class="hint" style="margin-top:6px">Method: ' + r.method + '</div>' +
+    (r.alt ? '<div class="hint">' + r.alt.method + ' gives δD ' + f1(r.alt.dD) + ' · δP ' + f1(r.alt.dP) + ' · δH ' + f1(r.alt.dH) + ' (a second, independent estimate: if the two disagree by more than about 2, treat the numbers as uncertain)</div>' : '') +
     '<div class="hint" style="margin-top:6px">Groups used: ' + grp + '</div></div>';
   if (r.partial.length) h += '<div class="warn">' + r.partial.join(', ') + ': only the dispersion term is tabulated, so δP / δH are underestimated.</div>';
   r.notes.forEach(n => { h += '<div class="warn">' + n + '</div>'; });
+  if (r.dH >= 15) h += '<div class="warn">Very polar solute: HSP cannot judge water or polyol solvents (glycerol, glycols) reliably here, because hydration and crystal packing decide the outcome. Treat their verdicts with caution.</div>';
   h += list('good', 'Likely to dissolve / mix') + list('partial', 'Borderline') + list('poor', 'Unlikely');
-  h += '<div class="hint" style="margin-top:8px">Chip numbers are the Hansen distance Ra = √(4ΔδD² + ΔδP² + ΔδH²) (smaller = more alike). Verdicts use the Flory–Huggins test χ = V<sub>solvent</sub>·Ra² / (4RT) against the mixing limit χ<sub>c</sub>, which depends on the size of your molecule, so small molecules mix with a wider range of solvents than large ones. δD, δP, δH come from Hoftyzer–Van Krevelen group contributions (typical error about 1 MPa<sup>½</sup> for common liquids). “Like dissolves like” only: water is predicted poorly, and crystal lattice energy, ionisation, temperature and concentration are ignored, so use it to compare solvents, not to predict a solubility value.</div>';
+  h += '<div class="hint" style="margin-top:8px">Chip numbers are the Hansen distance Ra = √(4ΔδD² + ΔδP² + ΔδH²) (smaller = more alike). Verdicts use the Flory–Huggins test χ = V<sub>solvent</sub>·Ra² / (4RT) against the mixing limit χ<sub>c</sub>, which depends on the size of your molecule, so small molecules mix with a wider range of solvents than large ones. ' + (/Stefanis/.test(r.method) ? 'δD, δP, δH come from the Stefanis–Panayiotou group-contribution method (Int. J. Thermophys. 29, 2008, 568–585). It was fitted on molecules with three or more carbons; the paper reports average errors of about 0.4 (δD), 0.9 (δP) and 0.8 (δH) MPa<sup>½</sup> on its data, and in a check on common solvents small alcohols came out with δH about 3–4 too low.' : 'δD, δP, δH come from Hoftyzer–Van Krevelen group contributions (typical error about 1 MPa<sup>½</sup> for common liquids).') + ' “Like dissolves like” only: water is predicted poorly, and crystal lattice energy, ionisation, temperature and concentration are ignored, so use it to compare solvents, not to predict a solubility value.</div>';
   out.innerHTML = h;
 };
 $('#dip').onclick = () => {
@@ -579,7 +583,7 @@ const STEPS = [
   { sel: '#examples', t: 'Load example', x: 'Open a ready-made molecule (benzene, azulene, tropylium, cis / trans-butene…). Note: an example <b>replaces</b> the current drawing. Use Undo to bring yours back.' },
   { sel: ['#undo', '#redo', '#clean', '#clear'], t: 'Edit controls', x: '<b>Undo / Redo</b> (Ctrl+Z / Ctrl+Y). <b>Clean up</b> tidies bond lengths and angles. <b>Clear</b> empties the canvas.' },
   { sel: '#expmol', t: 'Export MOL', x: 'Saves the drawing as a standard <b>.mol</b> file that opens in ChemDraw, Avogadro, MolView and similar programs.' },
-  { sel: '#impsmi', t: 'SMILES import / export', x: '<b>Import SMILES</b> draws a molecule from a pasted SMILES string (it replaces the current drawing; Undo brings yours back). <b>Export SMILES</b> gives the SMILES of what you drew and copies it. Wedge / dash and E/Z information is not written yet.' },
+  { sel: '#impsmi', t: 'SMILES import / export', x: '<b>Import SMILES</b> draws a molecule from a pasted SMILES string (it replaces the current drawing; Undo brings yours back). <b>Export SMILES</b> gives the SMILES of what you drew and copies it. Tetrahedral stereo works both ways: <b>@ / @@</b> in an imported SMILES become wedge / dash bonds, and the wedge / dash bonds you draw (narrow end at the stereocentre) are written out as @ / @@. E/Z double-bond geometry is not converted yet.' },
   { sel: '#stage', t: 'Drawing canvas', x: 'Click empty space to place an atom. <b>Drag from an atom</b> to pull out a bond. Click an existing bond with a bond tool to change its order. Hydrogens are filled in automatically from valence, so draw only the heavy atoms. A red dashed ring marks an over-valent atom.' },
   { sel: '#bondtools', t: 'Bond & edit tools', x: '<b>⇱ Select</b>: drag an atom to move it, drag empty space to pan. <b>Single / double / triple</b> bonds (keys 1, 2, 3). <b>Wedge</b> = bond towards you, <b>dash</b> = away; they set stereochemistry and the 3D shape. <b>⌫</b> erases an atom or bond. <b>+ / −</b> add a formal charge to the atom you click.' },
   { sel: '#elements', t: 'Atoms', x: 'Choose the element for new atoms. Click the canvas to place one, drag from an atom to attach one, or click an existing atom to change its element. <b>More…</b> holds Li, Na, K, Mg, Ca, Al. Keys: C N O S P F H B I, L = Cl, R = Br.' },

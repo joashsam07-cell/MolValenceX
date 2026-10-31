@@ -232,6 +232,21 @@ $('#clear').onclick = () => { mol = { atoms: [], bonds: [] }; sel = null; commit
 $('#clean').onclick = () => { const p = C.clean2D(mol, BL); mol.atoms.forEach((a, i) => { a.x = p[i][0]; a.y = p[i][1]; }); commit(); };
 const dl = (name, text) => { const u = URL.createObjectURL(new Blob([text])), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000); };
 $('#expmol').onclick = () => dl('molecule.mol', C.toMolBlock(mol, BL));
+$('#impsmi').onclick = () => {
+  const s = prompt('Paste a SMILES string (e.g. CC(=O)Oc1ccccc1C(=O)O):'); if (!s || !s.trim()) return;
+  let r; try { r = C.fromSMILES(s, BL); } catch (er) { alert('Could not read SMILES: ' + er.message); return; }
+  const W = cv.clientWidth || 600, H = cv.clientHeight || 400; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  r.atoms.forEach(a => { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
+  const dx = W / 2 - (x0 + x1) / 2, dy = H / 2 - (y0 + y1) / 2; nid = 1; const ids = r.atoms.map(() => nid++);
+  mol = { atoms: r.atoms.map((a, i) => ({ id: ids[i], el: a.el, x: a.x + dx, y: a.y + dy, charge: a.charge || 0 })), bonds: r.bonds.map(b => ({ id: nid++, a: ids[b.a], b: ids[b.b], order: b.order, stereo: 0 })) };
+  sel = null; commit();
+};
+$('#expsmi').onclick = () => {
+  if (!mol.atoms.length) { alert('Draw a molecule first.'); return; }
+  const s = C.toSMILES(mol);
+  try { navigator.clipboard.writeText(s); } catch (er) {}
+  prompt('SMILES (also copied to clipboard):', s);
+};
 window.addEventListener('keydown', e => {
   if (tourMode !== 'off') { tourKey(e); return; }
   if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;   // typing in the n-boxes must not trigger shortcuts or delete atoms
@@ -518,7 +533,7 @@ $('#hsp').onclick = () => {
   const { g, rg } = G(), bad = mol.atoms.map((a, i) => g.ok[i] ? '' : a.el + (i + 1)).filter(Boolean);
   let r; try { r = C.hansen(mol, g, rg); } catch (er) { out.innerHTML = '<div class="warn">Could not compute this structure.</div>'; return; }
   const warn = bad.length ? '<div class="warn">Over-valent atom(s): ' + bad.join(', ') + ' — results may be unreliable.</div>' : '';
-  if (!r.supported) { out.innerHTML = warn + '<div class="warn">' + r.reason + '</div><div class="hint">The group-contribution method covers alkanes, alkenes, alcohols, ethers, ketones, acids, esters, nitriles, nitro compounds, simple amines, Cl / F / Br compounds and mono- or di-substituted benzene rings.</div>'; return; }
+  if (!r.supported) { out.innerHTML = warn + '<div class="warn">' + r.reason + '</div><div class="hint">The group-contribution method covers alkanes, alkenes, alcohols, ethers, ketones, acids, esters, nitriles, nitro compounds, simple primary / secondary amines, primary / secondary amides, Cl / F / Br compounds and benzene rings with up to 4 substituents (including plain benzene). Not yet covered: fused or heteroaromatic rings, tertiary amines and amides, aldehydes, ureas / carbamates.</div>'; return; }
   const f1 = x => x.toFixed(1), grp = Object.keys(r.groups).map(k => k + (r.groups[k] > 1 ? ' ×' + r.groups[k] : '')).join(', ');
   const list = (v, title) => { const rows = r.rows.filter(x => x.verdict === v); return '<div class="lbl" style="margin-top:8px">' + title + '</div>' + (rows.length ? rows.map(x => '<span class="sol ' + v + '" title="Ra = ' + f1(x.ra) + ', chi = ' + x.chi.toFixed(2) + ' (limit ' + x.chic.toFixed(2) + ')">' + x.name + ' <small>' + f1(x.ra) + '</small></span>').join('') : '<div class="hint">none</div>'); };
   let h = warn + '<div class="card"><div class="lbl">Hansen solubility parameters (estimate, MPa<sup>½</sup>)</div>' +
@@ -564,6 +579,7 @@ const STEPS = [
   { sel: '#examples', t: 'Load example', x: 'Open a ready-made molecule (benzene, azulene, tropylium, cis / trans-butene…). Note: an example <b>replaces</b> the current drawing. Use Undo to bring yours back.' },
   { sel: ['#undo', '#redo', '#clean', '#clear'], t: 'Edit controls', x: '<b>Undo / Redo</b> (Ctrl+Z / Ctrl+Y). <b>Clean up</b> tidies bond lengths and angles. <b>Clear</b> empties the canvas.' },
   { sel: '#expmol', t: 'Export MOL', x: 'Saves the drawing as a standard <b>.mol</b> file that opens in ChemDraw, Avogadro, MolView and similar programs.' },
+  { sel: '#impsmi', t: 'SMILES import / export', x: '<b>Import SMILES</b> draws a molecule from a pasted SMILES string (it replaces the current drawing; Undo brings yours back). <b>Export SMILES</b> gives the SMILES of what you drew and copies it. Wedge / dash and E/Z information is not written yet.' },
   { sel: '#stage', t: 'Drawing canvas', x: 'Click empty space to place an atom. <b>Drag from an atom</b> to pull out a bond. Click an existing bond with a bond tool to change its order. Hydrogens are filled in automatically from valence, so draw only the heavy atoms. A red dashed ring marks an over-valent atom.' },
   { sel: '#bondtools', t: 'Bond & edit tools', x: '<b>⇱ Select</b>: drag an atom to move it, drag empty space to pan. <b>Single / double / triple</b> bonds (keys 1, 2, 3). <b>Wedge</b> = bond towards you, <b>dash</b> = away; they set stereochemistry and the 3D shape. <b>⌫</b> erases an atom or bond. <b>+ / −</b> add a formal charge to the atom you click.' },
   { sel: '#elements', t: 'Atoms', x: 'Choose the element for new atoms. Click the canvas to place one, drag from an atom to attach one, or click an existing atom to change its element. <b>More…</b> holds Li, Na, K, Mg, Ca, Al. Keys: C N O S P F H B I, L = Cl, R = Br.' },

@@ -907,7 +907,193 @@
   ];
   const RT = 8.314 * 298.15;   // J/mol at 25 °C
 
-  function hansen(mol, g, rg) {
+  const SP1 = {
+    'CH3': [-0.9714, -1.6448, -0.7813],
+    'CH2': [-0.0269, -0.3045, -0.4119],
+    'CH': [0.645, 0.6491, -0.2018],
+    'C': [1.2686, 2.0838, 0.0866],
+    'CH2=CH': [-1.0585, -2.0035, -1.2985],
+    'CH=CH': [0.0048, -0.2984, -0.04],
+    'CH2=C': [-0.4829, -0.7794, -0.826],
+    'CH=C': [0.5372, -0.9024, -1.8872],
+    'C=C': [0.3592, 1.0526, -15.4659],
+    'CH2=C=CH': [-1.6518, null, -0.998],
+    'CH#C': [0.232, -1.3294, 1.0736],
+    'C#C': [-0.2028, -0.7598, -1.1083],
+    'ACH': [0.1105, -0.5303, -0.4305],
+    'AC': [0.8446, 0.6187, 0.0084],
+    'ACCH3': [0.2174, -0.5705, -1.1473],
+    'ACCH2': [0.6933, 0.6517, -0.1375],
+    'CH3CO': [-0.3551, 2.3192, -1.3078],
+    'CH2CO': [0.6527, 3.7328, -0.5344],
+    'CHO': [-0.403, 3.4734, 0.1687],
+    'COOH': [-0.291, 0.9042, 3.7391],
+    'CH3COO': [-0.5401, -0.397, 1.5826],
+    'CH2COO': [0.2913, 3.6462, 1.2523],
+    'HCOO': [null, 1.9308, 2.1202],
+    'COO': [0.2039, 3.4637, 1.1389],
+    'OH': [-0.3462, 1.1404, 7.1908],
+    'ACOH': [0.5288, 1.101, 6.958],
+    'CH3O': [-0.5828, 0.1764, 0.146],
+    'CH2O': [0.031, 0.8826, -0.1528],
+    'CH-O': [0.8833, 1.6853, 0.447],
+    'C2H5O2': [-0.1249, 3.6422, 8.3579],
+    'CH2O-ring': [0.2753, 0.1994, -0.161],
+    'CH2NH2': [-0.5828, 1.4084, 2.592],
+    'CHNH2': [0.0112, -1.1989, 0.3818],
+    'CH3NH': [null, 0.6777, 5.6646],
+    'CH2NH': [0.8116, 0.9412, 1.34],
+    'CH3N': [0.8769, 1.2046, 1.6062],
+    'CH2N': [1.4681, 2.8345, 1.2505],
+    'ACNH2': [1.6987, 1.6761, 4.5274],
+    'CONH2': [-0.0689, 6.0694, 5.228],
+    'CON(CH3)2': [0.4482, 5.7899, 3.002],
+    'CH2SH': [1.2797, -0.8223, 4.4646],
+    'CH3S': [null, 0.4944, -1.4861],
+    'CH2S': [1.0595, 0.753, -0.2287],
+    'I': [0.7797, 0.6777, 0.2646],
+    'Br': [0.5717, 0.6997, -1.0722],
+    'CH2Cl': [0.2623, 0.597, -0.5364],
+    'CHCl': [0.4462, 2.806, -1.4125],
+    'CCl': [2.7576, 2.0406, 0.1101],
+    'CHCl2': [1.1797, 1.8361, -3.2861],
+    'CCl2': [0.3653, 0.1696, -1.4334],
+    'CCl3': [null, 1.2777, -2.6354],
+    'ACCl': [0.8475, -0.0339, -0.784],
+    'ACF': [0.117, 0.1856, -0.7182],
+    'Cl-vinyl': [0.2289, 2.3444, 3.8893],
+    'CF3': [-0.2293, -1.9735, -1.4665],
+    'CH2NO2': [null, 6.8944, -1.2861],
+    'CHNO2': [null, 8.0347, -2.3167],
+    'ACNO2': [1.4195, 4.4838, -0.7167],
+    'CH2CN': [-0.3392, 6.5341, -0.8892],
+    'CF2': [-0.9729, null, null],
+    'CF': [0.1707, null, null],
+    'F': [-0.7069, null, null],
+    'CH2=C=C': [-0.2804, null, -1.9167],
+    'O': [0.0472, 3.3432, 0.0256],
+    'Cl': [0.2256, 1.8711, -0.3295],
+    'C=N': [-0.3074, -0.0012, -5.3956],
+    'CH=N': [0.9672, 1.9728, 0.7668],
+    'NH': [null, 0.0103, 2.2086],
+    'CN': [0.0861, 6.5331, -0.6849],
+    'NCO': [-0.1306, 1.6102, 4.0461],
+    'SH': [1.0427, 1.9813, 4.8181],
+    'S': [1.4899, 9.2072, -0.625],
+    'SO2': [1.5502, 11.1758, 0.1055],
+    'C=S': [0.7747, 0.0683, 3.408],
+    'C=O': [-0.4343, 0.7905, 1.8147],
+    'N': [1.5438, 2.578, 1.1189]
+  };
+  const SP2 = {
+    'iPr': [0.046, 0.0019, 0.3149],
+    'tBu': [-0.0738, 1.1881, -0.2966],
+    'ring5': [-0.6681, -2.343, -0.3079],
+    'ring6': [-0.3874, -3.6432, null],
+    'diene': [-0.1355, -3.5085, -1.0795],
+    'CH3-C=': [-0.0785, 0.3316, 0.3875],
+    'CH2-C=': [-0.3236, -2.3179, -0.5836],
+    'CHorC-C=': [-0.2798, null, -1.1164],
+    'cycstring': [-0.1945, null, null],
+    'CH3COCH2': [-0.0451, -0.3383, -0.4083],
+    'Ccyc=O': [-0.2981, 0.4497, -0.4794],
+    'ACCOOH': [-0.2293, -0.6349, -0.903],
+    'CHorC-COOH': [null, -0.2187, 1.146],
+    'CH3COO-CHorC': [-0.522, -0.0652, 0.3085],
+    'COCH2COO': [null, -2.3792, 0.8412],
+    'anhydride': [-0.2707, -1.0562, 1.6335],
+    'ACHO': [0.3772, -1.811, -1.0096],
+    'CHOH': [0.1123, 0.2564, -0.1928],
+    'C(OH)': [-0.068, 0.1075, 1.2931],
+    'diol': [null, 0.6419, 0.387],
+    'aminoalcohol': [-0.0809, 0.5683, -0.6326],
+    'Ccyc-OH': [-0.0876, -3.522, 0.5914],
+    'C-O-C=C': [0.2063, 0.608, 1.1344],
+    'AC-O-C': [0.2568, 0.8153, 0.6092],
+    'Ncyc': [0.2218, -2.2018, -0.0452],
+    'Scyc': [0.4892, 0.304, 0.2297],
+    'ACBr': [0.1234, -0.4495, 0.3397],
+    'C=C-Br': [-0.4059, -0.0024, -1.1304],
+    'ring3': [0.02, 1.8288, -0.8073],
+    'ACCOO': [-0.1847, 0.4059, -0.1921],
+    'naph': [-0.3751, -1.298, 0.6844],
+    'OcycCcycO': [0.2468, 2.7501, 0.122],
+    'AC-O-AC': [-0.5646, -3.4329, 2.083],
+    'pyr': [0.7002, 0.0691, -2.7661],
+    'lactam': [0.2956, 2.8958, 1.3125],
+    'acetal': [0.0839, 0.3451, 0.3767],
+    'dicarbonyl': [-0.4862, -0.4888, 1.2482]
+  };
+  const SP1L = {
+    'CH3': [-0.72412, 0.29901],
+    'CH2': [-0.1403, -0.1161],
+    'CH': [0.58978, 0.1386],
+    'CH2=CH': [-0.29774, 1.35521],
+    'CH=CH': [-0.22864, 0.48189],
+    'CH2=C': [0.64816, 0.11148],
+    'CH=C': [1.22566, -0.03066],
+    'C=C': [null, -0.12117],
+    'CH2=C=CH': [-0.32258, null],
+    'CH#C': [-0.74895, 0.43846],
+    'C#C': [null, -0.35107],
+    'ACH': [-0.19313, 0.13532],
+    'AC': [0.16369, -0.17405],
+    'ACCH3': [-0.47724, -0.28733],
+    'ACCH2': [-0.33086, -0.88084],
+    'ACCH<': [0.86718, -1.44666],
+    'CH3COO': [1.71923, null],
+    'CH2COO': [2.16274, null],
+    'COO': [1.60913, 0.37204],
+    'OH': [1.84013, null],
+    'CH3O': [-0.4032, null],
+    'CH2O': [null, null],
+    'CH-O': [null, -0.40667],
+    'CH2O-ring': [-0.33305, null],
+    'CH2NH2': [null, null],
+    'CH2NH': [0.83214, null],
+    'CHNH': [1.25999, null],
+    'CH3N': [null, -0.17004],
+    'CH2N': [0.65229, -1.03686],
+    'CH2S': [null, 0.14606],
+    'CH2Cl': [null, 0.48952],
+    'CHCl': [null, 0.12996],
+    'CHCl2': [null, 0.52541],
+    'ACCl': [-0.10778, 0.44238],
+    'CCl2F': [null, null],
+    'ACF': [null, -0.37183],
+    'Cl-vinyl': [null, 0.66062],
+    'CF3': [null, -0.08871],
+    'CH2=C=C': [1.20154, null],
+    'O': [-0.48942, null],
+    'Cl': [null, 1.12515],
+    'S': [0.11058, null],
+    'C=O': [null, -0.05529]
+  };
+  const SP2L = {
+    'iPr': [0.200694, 1e-08],
+    'ring5': [-0.897912, 0.19438],
+    'ring6': [-0.956852, 2e-08],
+    'diene': [0.648793, null],
+    'CH3-C=': [-0.008375, -0.06137],
+    'CH2-C=': [0.011009, 0.06599],
+    'CHorC-C=': [-0.3972, 0.342229],
+    'cycstring': [null, -0.280859],
+    'ACCOO': [0.491153, 1e-08],
+    'naph': [0.013012, 0.086424],
+    'acetal': [0.0, null]
+  };
+
+  // Flory–Huggins: chi = Vs·Ra² / (4RT); two liquids / a solute and a solvent mix when chi < chi_c = 0.5·(1 + 1/√n)²,
+  // n = molar volume of the solute / molar volume of the solvent (small molecules tolerate a much larger Ra than polymers).
+  function rankSolvents(dD, dP, dH, V) {
+    return SOLV.map(s => {
+      const ra = Math.sqrt(4 * (dD - s[1]) * (dD - s[1]) + (dP - s[2]) * (dP - s[2]) + (dH - s[3]) * (dH - s[3]));
+      const chi = s[4] * ra * ra / (4 * RT), nn = Math.max(V / s[4], 0.2), chic = 0.5 * Math.pow(1 + 1 / Math.sqrt(nn), 2), red = chi / chic;
+      return { name: s[0], ra, chi, chic, red, verdict: red < 1 ? 'good' : red < 1.5 ? 'partial' : 'poor' };
+    }).sort((a, b) => a.red - b.red);
+  }
+
+  function hansenVK(mol, g, rg) {
     g = g || buildGraph(mol); rg = rg || findRings(g);
     const n = mol.atoms.length;
     if (!n) return { supported: false, reason: 'Empty drawing.' };
@@ -997,12 +1183,337 @@
     dT = Math.sqrt(dD * dD + dP * dP + dH * dH);
     // Flory–Huggins: chi = Vs·Ra² / (4RT); two liquids / a solute and a solvent mix when chi < chi_c = 0.5·(1 + 1/√n)²,
     // n = molar volume of the solute / molar volume of the solvent (small molecules tolerate a much larger Ra than polymers).
-    const rows = SOLV.map(s => {
-      const ra = Math.sqrt(4 * (dD - s[1]) * (dD - s[1]) + (dP - s[2]) * (dP - s[2]) + (dH - s[3]) * (dH - s[3]));
-      const chi = s[4] * ra * ra / (4 * RT), nn = Math.max(V / s[4], 0.2), chic = 0.5 * Math.pow(1 + 1 / Math.sqrt(nn), 2), red = chi / chic;
-      return { name: s[0], ra, chi, chic, red, verdict: red < 1 ? 'good' : red < 1.5 ? 'partial' : 'poor' };
-    }).sort((a, b) => a.red - b.red);
-    return { supported: true, dD, dP, dH, dT, V, groups: counts, partial, notes, rows };
+    const rows = rankSolvents(dD, dP, dH, V);
+    return { supported: true, method: 'Hoftyzer–Van Krevelen', dD, dP, dH, dT, V, groups: counts, partial, notes, rows };
+  }
+
+  const SP_C = { d: 17.3231, p: 7.3548, h: 7.9793, pLow: 2.7467, hLow: 1.3720 };   // Eqs. 24–28
+  const SP_HAL = ['F', 'Cl', 'Br', 'I'];
+
+  // Splits the drawing into the paper's first-order groups (UNIFAC-type: a group may span several atoms) and
+  // detects the second-order groups. Returns { first, second, bad } with group counts.
+  function spFragment(mol, g, rg, ar) {
+    const n = mol.atoms.length, el = i => mol.atoms[i].el, chg = i => mol.atoms[i].charge || 0;
+    const nb = i => g.nbrs[i], hc = i => g.hc[i], lab = i => el(i) + (i + 1);
+    const arom = new Set(); ar.rings.forEach(r => { if (r.type === 'aromatic') r.atoms.forEach(a => arom.add(a)); });
+    const inRing = i => rg.rings.some(r => r.atoms.includes(i));
+    const used = new Array(n).fill(false), gof = new Array(n).fill(null), first = {}, bad = [];
+    const take = (key, atoms) => { first[key] = (first[key] || 0) + 1; atoms.forEach(a => { used[a] = true; gof[a] = key; }); };
+    const skip = atoms => atoms.forEach(a => { used[a] = true; });
+    const sp3 = i => !arom.has(i) && nb(i).every(e => e.order === 1);
+    const freeC = i => el(i) === 'C' && !used[i];
+    const pick = (list, h) => { const r = list.find(c => hc(c) === h); return r === undefined ? -1 : r; };
+    // carbon that joins a hetero-atom group: CH3 first, then CH2 (then CH when allowed)
+    const pairC = (cands, ch) => { const ok = cands.filter(c => freeC(c) && sp3(c)); let r = pick(ok, 3); if (r < 0) r = pick(ok, 2); if (r < 0 && ch) r = pick(ok, 1); return r; };
+
+    // 1. nitro, nitrile, sulfone / sulfoxide, thiocarbonyl
+    for (let N = 0; N < n; N++) {
+      if (used[N] || el(N) !== 'N') continue;
+      const os = nb(N).filter(e => el(e.j) === 'O' && nb(e.j).length === 1), cs = nb(N).filter(e => el(e.j) === 'C');
+      if (os.length === 2 && cs.length === 1 && nb(N).length === 3) {
+        const c = cs[0].j, ids = [N, os[0].j, os[1].j];
+        if (arom.has(c)) take('ACNO2', ids.concat(c)); else if (hc(c) === 2) take('CH2NO2', ids.concat(c)); else if (hc(c) === 1) take('CHNO2', ids.concat(c));
+        else { bad.push('nitro group on ' + lab(c) + ' (needs a CH2, CH or aromatic carbon)'); skip(ids); }
+      }
+    }
+    for (let c = 0; c < n; c++) {
+      if (used[c] || el(c) !== 'C') continue;
+      const t = nb(c).find(e => e.order === 3 && el(e.j) === 'N'); if (!t) continue;
+      const a = nb(c).find(e => e.j !== t.j);
+      if (a && freeC(a.j) && sp3(a.j) && hc(a.j) === 2) take('CH2CN', [a.j, c, t.j]); else take('CN', [c, t.j]);
+    }
+    for (let s = 0; s < n; s++) {
+      if (used[s] || el(s) !== 'S') continue;
+      const os = nb(s).filter(e => el(e.j) === 'O' && e.order === 2 && !used[e.j]);
+      if (os.length === 2) take('SO2', [s, os[0].j, os[1].j]);
+      else if (os.length === 1) { bad.push('sulfoxide at ' + lab(s)); skip([s, os[0].j]); }
+    }
+
+    // 1b. structures the paper's tables cannot describe: exocyclic C=O / C=S on an aromatic ring (pyridone, xanthine, uracil type) and leftover charges
+    for (let c = 0; c < n; c++) {
+      if (!arom.has(c) || used[c]) continue;
+      const x = nb(c).find(e => e.order === 2 && (el(e.j) === 'O' || el(e.j) === 'S') && !arom.has(e.j));
+      if (x) { bad.push('C=' + el(x.j) + ' on an aromatic ring at ' + lab(c) + ' (pyridone / xanthine / uracil type)'); skip([c, x.j]); }
+    }
+    for (let i = 0; i < n; i++) if (!used[i] && chg(i) !== 0) { bad.push('charged atom ' + lab(i)); skip([i]); }
+
+    // 2. carbonyl-type carbons: acid, ester, amide, aldehyde, ketone, thioketone
+    for (let c = 0; c < n; c++) {
+      if (used[c] || el(c) !== 'C' || arom.has(c)) continue;
+      const dS = nb(c).find(e => e.order === 2 && el(e.j) === 'S' && !used[e.j]);
+      if (dS) { take('C=S', [c, dS.j]); continue; }
+      const dO = nb(c).find(e => e.order === 2 && el(e.j) === 'O' && !used[e.j]); if (!dO) continue;
+      const others = nb(c).filter(e => e !== dO), carbons = others.filter(e => el(e.j) === 'C').map(e => e.j);
+      const sO = others.filter(e => el(e.j) === 'O' && e.order === 1 && !used[e.j]);
+      const acid = sO.find(e => nb(e.j).length === 1 && hc(e.j) === 1), ester = sO.find(e => nb(e.j).length === 2 && hc(e.j) === 0);
+      const amN = others.find(e => el(e.j) === 'N' && e.order === 1 && !used[e.j]);
+      const het = others.filter(e => (el(e.j) === 'N' || el(e.j) === 'O') && e.order === 1 && !used[e.j]).map(e => e.j);
+      if (het.length >= 2) { bad.push('urea / carbamate / carbonate-type group at ' + lab(c) + ' (not in the paper’s group list)'); skip([c, dO.j].concat(het)); continue; }
+      if (acid) { take('COOH', [c, dO.j, acid.j]); continue; }
+      if (ester) {
+        const a = carbons.length ? carbons[0] : -1, ok = a >= 0 && freeC(a) && sp3(a);
+        if (hc(c) === 1) take('HCOO', [c, dO.j, ester.j]);
+        else if (ok && hc(a) === 3) take('CH3COO', [a, c, dO.j, ester.j]);
+        else if (ok && hc(a) === 2) take('CH2COO', [a, c, dO.j, ester.j]);
+        else take('COO', [c, dO.j, ester.j]);
+        continue;
+      }
+      if (amN) {
+        const N = amN.j, ns = nb(N).filter(e => e.j !== c);
+        if (hc(N) === 2 && !ns.length) { take('CONH2', [c, dO.j, N]); continue; }
+        const me = ns.filter(e => el(e.j) === 'C' && freeC(e.j) && sp3(e.j) && hc(e.j) === 3 && nb(e.j).length === 1);
+        if (hc(N) === 0 && ns.length === 2 && me.length === 2) { take('CON(CH3)2', [c, dO.j, N, me[0].j, me[1].j]); continue; }
+        take('C=O', [c, dO.j]); continue;                       // other amides: generic carbonyl, nitrogen handled below
+      }
+      if (hc(c) === 1) { take('CHO', [c, dO.j]); continue; }
+      const a3 = carbons.find(x => freeC(x) && sp3(x) && hc(x) === 3), a2 = carbons.find(x => freeC(x) && sp3(x) && hc(x) === 2);
+      if (a3 !== undefined) take('CH3CO', [a3, c, dO.j]); else if (a2 !== undefined) take('CH2CO', [a2, c, dO.j]); else take('C=O', [c, dO.j]);
+    }
+
+    // 3. alcohols / phenols, ethers
+    for (let o = 0; o < n; o++) {
+      if (used[o] || el(o) !== 'O' || hc(o) !== 1 || nb(o).length !== 1) continue;
+      const c = nb(o)[0].j;
+      if (el(c) === 'C' && arom.has(c) && !used[c]) take('ACOH', [c, o]); else take('OH', [o]);
+    }
+    for (let o = 0; o < n; o++) {
+      if (used[o] || el(o) !== 'O' || hc(o) !== 0 || nb(o).length !== 2 || nb(o).some(e => e.order !== 1)) continue;
+      const c = pairC(nb(o).map(e => e.j), true);
+      if (c < 0) take('O', [o]);
+      else { const h = hc(c); take(h === 3 ? 'CH3O' : h === 2 ? (inRing(o) && inRing(c) ? 'CH2O-ring' : 'CH2O') : 'CH-O', [c, o]); }
+    }
+
+    // 4. nitrogen
+    for (let N = 0; N < n; N++) {
+      if (used[N] || el(N) !== 'N') continue;
+      const ns = nb(N), h = hc(N);
+      if (chg(N) !== 0) { bad.push('charged nitrogen ' + lab(N)); skip([N]); continue; }
+      if (arom.has(N)) {
+        if (ns.length === 2 && h === 0) {                        // pyridine-type: N is grouped with one neighbouring ring carbon
+          const cs = ns.map(e => e.j).filter(c => !used[c]);
+          let c = cs.find(x => hc(x) > 0); if (c === undefined) c = cs[0];
+          if (c === undefined) { bad.push('aromatic nitrogen ' + lab(N)); skip([N]); } else take(hc(c) > 0 ? 'CH=N' : 'C=N', [c, N]);
+        } else take(h === 1 ? 'NH' : 'N', [N]);
+        continue;
+      }
+      const dbl = ns.find(e => e.order === 2 && el(e.j) === 'C' && !used[e.j]);
+      if (dbl) { take(hc(dbl.j) > 0 ? 'CH=N' : 'C=N', [dbl.j, N]); continue; }
+      if (ns.some(e => e.order > 1)) { bad.push('N=X / N≡X group at ' + lab(N)); skip([N]); continue; }
+      const cs = ns.map(e => e.j);
+      if (h === 2) {
+        const c = cs[0];
+        if (arom.has(c) && !used[c]) take('ACNH2', [c, N]);
+        else if (freeC(c) && sp3(c) && hc(c) === 2) take('CH2NH2', [c, N]);
+        else if (freeC(c) && sp3(c) && hc(c) === 1) take('CHNH2', [c, N]);
+        else { bad.push('primary amine on ' + lab(c) + ' (needs a CH2, CH or aromatic carbon)'); skip([N]); }
+      } else if (h === 1) { const c = pairC(cs, false); if (c < 0) take('NH', [N]); else take(hc(c) === 3 ? 'CH3NH' : 'CH2NH', [c, N]); }
+      else if (h === 0 && cs.length === 3) { const c = pairC(cs, false); if (c < 0) take('N', [N]); else take(hc(c) === 3 ? 'CH3N' : 'CH2N', [c, N]); }
+      else { bad.push('nitrogen ' + lab(N)); skip([N]); }
+    }
+
+    // 5. sulfur
+    for (let s = 0; s < n; s++) {
+      if (used[s] || el(s) !== 'S') continue;
+      const ns = nb(s);
+      if (ns.some(e => e.order > 1) || chg(s)) { bad.push('sulfur group at ' + lab(s)); skip([s]); continue; }
+      if (hc(s) === 1 && ns.length === 1) { const c = ns[0].j; if (freeC(c) && sp3(c) && hc(c) === 2) take('CH2SH', [c, s]); else take('SH', [s]); }
+      else if (ns.length === 2 && hc(s) === 0) {
+        if (arom.has(s)) take('S', [s]);
+        else { const c = pairC(ns.map(e => e.j), false); if (c < 0) take('S', [s]); else take(hc(c) === 3 ? 'CH3S' : 'CH2S', [c, s]); }
+      } else { bad.push('sulfur ' + lab(s)); skip([s]); }
+    }
+
+    // 6. halogens
+    for (let c = 0; c < n; c++) {
+      if (el(c) !== 'C') continue;
+      const hs = nb(c).filter(e => SP_HAL.includes(el(e.j)) && !used[e.j]); if (!hs.length) continue;
+      if (arom.has(c)) {
+        hs.forEach(e => { const X = el(e.j); if (X === 'Br' || X === 'I') take(X, [e.j]); else if (!used[c]) take(X === 'Cl' ? 'ACCl' : 'ACF', [c, e.j]); else take(X === 'Cl' ? 'Cl' : 'F', [e.j]); });
+        continue;
+      }
+      if (used[c]) { hs.forEach(e => take(el(e.j) === 'Cl' || el(e.j) === 'F' ? el(e.j) : el(e.j), [e.j])); continue; }
+      const X = k => hs.filter(e => el(e.j) === k).map(e => e.j), Cl = X('Cl'), F = X('F'), h = hc(c), vinyl = nb(c).some(e => e.order === 2);
+      X('Br').concat(X('I')).forEach(x => take(el(x), [x]));
+      if (Cl.length && !F.length) {
+        if (vinyl && Cl.length === 1) take('Cl-vinyl', [Cl[0]]);
+        else if (Cl.length === 1 && h <= 2) take(h === 2 ? 'CH2Cl' : h === 1 ? 'CHCl' : 'CCl', [c, Cl[0]]);
+        else if (Cl.length === 2 && h <= 1) take(h === 1 ? 'CHCl2' : 'CCl2', [c].concat(Cl));
+        else if (Cl.length === 3 && h === 0) take('CCl3', [c].concat(Cl));
+        else Cl.forEach(x => take('Cl', [x]));
+      } else if (F.length && !Cl.length) {
+        if (F.length === 3 && h === 0) take('CF3', [c].concat(F));
+        else if (F.length === 2 && h === 0) take('CF2', [c].concat(F));
+        else if (F.length === 1 && h === 0) take('CF', [c, F[0]]);
+        else F.forEach(x => take('F', [x]));
+      } else { Cl.forEach(x => take('Cl', [x])); F.forEach(x => take('F', [x])); }
+    }
+
+    // 7. hydrocarbon skeleton: alkynes, allenes, aromatic carbons (with a CH3 / CH2 substituent), alkenes, saturated carbons
+    for (let c = 0; c < n; c++) {
+      if (!freeC(c) || arom.has(c)) continue;
+      const t = nb(c).find(e => e.order === 3 && el(e.j) === 'C' && freeC(e.j));
+      if (t && c < t.j) take(hc(c) === 1 || hc(t.j) === 1 ? 'CH#C' : 'C#C', [c, t.j]);
+    }
+    for (let m = 0; m < n; m++) {
+      if (!freeC(m) || arom.has(m)) continue;
+      const d = nb(m).filter(e => e.order === 2 && freeC(e.j));
+      if (d.length === 2 && nb(m).length === 2) {
+        const ends = d.map(e => e.j).sort((a, b) => hc(b) - hc(a));
+        if (hc(ends[0]) === 2 && hc(ends[1]) === 1) take('CH2=C=CH', [ends[0], m, ends[1]]);
+        else if (hc(ends[0]) === 2 && hc(ends[1]) === 0) take('CH2=C=C', [ends[0], m, ends[1]]);
+        else { bad.push('allene at ' + lab(m)); skip([m].concat(ends)); }
+      }
+    }
+    for (let c = 0; c < n; c++) {
+      if (!arom.has(c) || used[c]) continue;
+      const s = nb(c).map(e => e.j).find(j => !arom.has(j) && freeC(j) && sp3(j) && (hc(j) === 3 || hc(j) === 2));
+      if (s !== undefined) take(hc(s) === 3 ? 'ACCH3' : 'ACCH2', [c, s]); else take(hc(c) > 0 ? 'ACH' : 'AC', [c]);
+    }
+    for (let c = 0; c < n; c++) {
+      if (!freeC(c) || arom.has(c)) continue;
+      const d = nb(c).find(e => e.order === 2 && freeC(e.j) && !arom.has(e.j));
+      if (!d || c > d.j) continue;
+      const hs = [hc(c), hc(d.j)].sort((a, b) => b - a), key = hs[0] === 2 && hs[1] === 1 ? 'CH2=CH' : hs[0] === 1 && hs[1] === 1 ? 'CH=CH' : hs[0] === 2 && hs[1] === 0 ? 'CH2=C' : hs[0] === 1 && hs[1] === 0 ? 'CH=C' : hs[0] === 0 && hs[1] === 0 ? 'C=C' : null;
+      if (key) take(key, [c, d.j]); else { bad.push('C=C double bond at ' + lab(c) + ' (ethylene-type)'); skip([c, d.j]); }
+    }
+    for (let c = 0; c < n; c++) {
+      if (!freeC(c)) continue;
+      if (!sp3(c)) { bad.push('carbon ' + lab(c) + ' (unrecognised bonding)'); skip([c]); continue; }
+      const h = hc(c);
+      if (h === 4) { bad.push('methane (single carbon)'); skip([c]); continue; }
+      take(h === 3 ? 'CH3' : h === 2 ? 'CH2' : h === 1 ? 'CH' : 'C', [c]);
+    }
+    for (let i = 0; i < n; i++) {                                   // leftovers: lone halogens / oxygens / other elements
+      if (used[i]) continue;
+      const e = el(i);
+      if (SP_HAL.includes(e)) take(e, [i]);
+      else if (e === 'O' && nb(i).length) take('O', [i]);
+      else { bad.push(e === 'O' ? 'water / free oxygen' : 'element ' + e + ' (' + lab(i) + ')'); skip([i]); }
+    }
+
+    // second-order groups (structural patterns)
+    const second = {}, add = k => { second[k] = (second[k] || 0) + 1; };
+    const cN = i => nb(i).filter(e => el(e.j) === 'C').map(e => e.j);
+    const alkC = c => el(c) === 'C' && !arom.has(c) && nb(c).some(e => e.order === 2 && el(e.j) === 'C');
+    const plain = ['CH3', 'CH2', 'CH', 'C'];
+    const dO = c => nb(c).some(e => e.order === 2 && el(e.j) === 'O');
+    const isKetone = c => el(c) === 'C' && !arom.has(c) && dO(c) && hc(c) === 0 && nb(c).filter(e => e.order === 1).every(e => el(e.j) === 'C');
+    const isEster = c => el(c) === 'C' && dO(c) && nb(c).some(e => e.order === 1 && el(e.j) === 'O' && nb(e.j).length === 2);
+    for (let c = 0; c < n; c++) {
+      const e = el(c), k = gof[c];
+      if (e === 'C') {
+        if (k === 'CH' && sp3(c) && cN(c).filter(x => sp3(x) && hc(x) === 3).length >= 2) add('iPr');
+        if (k === 'C' && sp3(c) && cN(c).filter(x => sp3(x) && hc(x) === 3).length >= 4 - 1) add('tBu');
+        if (plain.includes(k) && sp3(c) && cN(c).some(alkC)) add(k === 'CH3' ? 'CH3-C=' : k === 'CH2' ? 'CH2-C=' : 'CHorC-C=');
+        if (alkC(c)) cN(c).forEach(x => { if (x > c && alkC(x) && nb(c).some(f => f.j === x && f.order === 1)) add('diene'); });
+        if (k === 'COOH') cN(c).forEach(x => { if (arom.has(x)) add('ACCOOH'); else if (sp3(x) && hc(x) <= 1) add('CHorC-COOH'); });
+        if (isEster(c) && !arom.has(c) && !nb(c).some(f => el(f.j) === 'N')) {
+          const a = cN(c).find(x => arom.has(x)); if (a !== undefined) add('ACCOO');
+          if (k === 'CH3COO') { const o = nb(c).find(f => f.order === 1 && el(f.j) === 'O' && nb(f.j).length === 2), x = o && nb(o.j).find(f => f.j !== c); if (x && el(x.j) === 'C' && sp3(x.j) && hc(x.j) <= 1) add('CH3COO-CHorC'); }
+        }
+        if (k === 'CHO' && cN(c).some(x => arom.has(x))) add('ACHO');
+        if (isKetone(c) && inRing(c)) add('Ccyc=O');
+        if (isKetone(c)) { const cs = cN(c); if (cs.length === 2 && cs.some(x => sp3(x) && hc(x) === 3) && cs.some(x => sp3(x) && hc(x) === 2)) add('CH3COCH2'); }
+        if (sp3(c) && hc(c) === 2 && cN(c).length === 2) {
+          const cs = cN(c);
+          if (cs.some(isKetone) && cs.some(isEster)) add('COCH2COO');
+        }
+        if (sp3(c) && cN(c).filter(isKetone).length === 2) add('dicarbonyl');
+        if (sp3(c) && nb(c).filter(f => el(f.j) === 'O' && nb(f.j).length === 2 && f.order === 1 && !arom.has(f.j)).length === 2) add('acetal');
+        if (sp3(c)) cN(c).forEach(x => {
+          if (x < c || !sp3(x)) return;
+          const oh = i => nb(i).some(f => el(f.j) === 'O' && hc(f.j) === 1 && nb(f.j).length === 1), am = i => nb(i).some(f => el(f.j) === 'N' && f.order === 1 && !arom.has(f.j) && !nb(f.j).some(q => dO(q.j)));
+          if (oh(c) && oh(x)) add('diol'); else if ((oh(c) && am(x)) || (oh(x) && am(c))) add('aminoalcohol');
+        });
+      } else if (e === 'O') {
+        if (k === 'OH' || k === 'ACOH') { if (k === 'OH') { const x = nb(c)[0].j; if (el(x) === 'C' && sp3(x)) add(inRing(x) ? 'Ccyc-OH' : hc(x) === 1 ? 'CHOH' : hc(x) === 0 ? 'C(OH)' : 'x'); } }
+        else if (nb(c).length === 2 && hc(c) === 0 && !arom.has(c)) {
+          const cs = nb(c).map(f => f.j);
+          if (cs.every(x => el(x) === 'C' && arom.has(x))) add('AC-O-AC');
+          else if (cs.some(x => el(x) === 'C' && arom.has(x)) && cs.some(x => el(x) === 'C' && sp3(x))) add('AC-O-C');
+          else if (cs.some(alkC) && cs.some(x => el(x) === 'C' && sp3(x))) add('C-O-C=C');
+          else if (cs.every(x => isEster(x) || (el(x) === 'C' && dO(x)))) add('anhydride');
+        }
+      } else if (e === 'N') {
+        if (!arom.has(c) && inRing(c) && nb(c).every(f => f.order === 1) && !nb(c).some(f => dO(f.j))) add('Ncyc');
+        if (!arom.has(c) && inRing(c) && nb(c).some(f => dO(f.j) && rg.rings.some(r => r.atoms.includes(c) && r.atoms.includes(f.j)))) add('lactam');
+      } else if (e === 'S') { if (!arom.has(c) && inRing(c) && nb(c).every(f => f.order === 1) && nb(c).length === 2) add('Scyc'); }
+      else if (e === 'Br') { const x = nb(c)[0] && nb(c)[0].j; if (x !== undefined && el(x) === 'C') { if (arom.has(x)) add('ACBr'); else if (alkC(x)) add('C=C-Br'); } }
+    }
+    rg.rings.forEach((r, ri) => {
+      if (r.atoms.every(a => el(a) === 'C' && !arom.has(a))) { if (r.size === 3) add('ring3'); else if (r.size === 5) add('ring5'); else if (r.size === 6) add('ring6'); }
+      if (r.size === 6 && r.atoms.every(a => arom.has(a)) && r.atoms.filter(a => el(a) === 'N').length === 1) add('pyr');
+      for (let rj = ri + 1; rj < rg.rings.length; rj++) {
+        const q = rg.rings[rj];
+        if (r.size === 6 && q.size === 6 && [r, q].every(x => x.atoms.every(a => arom.has(a) && el(a) === 'C')) && r.bonds.some(b => q.bonds.includes(b))) add('naph');
+      }
+    });
+    delete second.x;
+    return { first, second, bad: Array.from(new Set(bad)) };
+  }
+
+  // Le Bas molar volume (cm³/mol): used only to size the Flory–Huggins mixing limit, accuracy about ±10 %
+  function leBasVolume(mol, g, rg) {
+    let V = 0;
+    mol.atoms.forEach((a, i) => {
+      const nb = g.nbrs[i]; V += 3.7 * g.hc[i];
+      if (a.el === 'C') V += 14.8;
+      else if (a.el === 'N') V += nb.some(e => e.order > 1) ? 15.6 : nb.length + g.hc[i] === 3 ? (nb.length === 1 ? 10.5 : nb.length === 2 ? 12.0 : 15.6) : 15.6;
+      else if (a.el === 'O') V += nb.length === 2 && nb.every(e => e.order === 1) ? 9.1 : 7.4;
+      else V += { S: 25.6, F: 8.7, Cl: 24.6, Br: 27.0, I: 37.0, P: 27.0 }[a.el] || 20;
+    });
+    rg.rings.forEach(r => { V -= r.size === 3 ? 6 : r.size === 4 ? 8.5 : r.size === 5 ? 11.5 : 15; });
+    return Math.max(V, 10);
+  }
+
+  function hansenSP(mol, g, rg) {
+    const n = mol.atoms.length, M = 'Stefanis–Panayiotou';
+    if (!n) return { supported: false, reason: 'Empty drawing.' };
+    const ar = aromaticity(mol, g, rg), fr = spFragment(mol, g, rg, ar);
+    if (fr.bad.length) return { supported: false, reason: M + ' method: no data for ' + fr.bad.slice(0, 4).join('; ') + '.' };
+    const W = Object.keys(fr.second).length ? 1 : 0, notes = [];
+    const sum = (idx, c0, T1, T2, strict) => {
+      let s = c0;
+      for (const k of Object.keys(fr.first)) { const row = T1[k], v = row ? row[idx] : null; if (v === null || v === undefined) { if (strict) return { s: null, miss: k }; return null; } s += fr.first[k] * v; }
+      if (W) for (const k of Object.keys(fr.second)) { const row = T2[k], v = row ? row[idx] : null; if (v !== null && v !== undefined) s += fr.second[k] * v; }
+      return strict ? { s, miss: null } : s;
+    };
+    const dd = sum(0, SP_C.d, SP1, SP2, true);
+    const WHY = { NH: ', which is what an amide N–H, a pyrrole / indole / imidazole N–H or a diarylamine N–H is classed as' };
+    if (dd.s === null) return { supported: false, reason: M + ' method: the paper gives no δD contribution for the group “' + dd.miss + '”' + (WHY[dd.miss] || '') + '.' };
+    const out = {};
+    [['p', 1, SP_C.p, SP_C.pLow, 0], ['h', 2, SP_C.h, SP_C.hLow, 1]].forEach(([nm, idx, c0, cLow, li]) => {
+      const main = sum(idx, c0, SP1, SP2, true);
+      if (main.s === null) { out[nm] = { miss: main.miss }; return; }
+      let v = main.s, usedLow = false;
+      // low-value equations (Eqs. 27 / 28, Tables 5 / 6); only when Table 6 has an entry for every second-order group present
+      const lw = Object.keys(fr.second).every(k => SP2L[k]) ? sum(li, cLow, SP1L, SP2L, false) : null;
+      if (lw !== null && lw < 3) { v = lw; usedLow = true; }
+      out[nm] = { v: Math.max(0, v), usedLow, main: main.s, low: lw };
+    });
+    if (out.p.miss || out.h.miss) return { supported: false, reason: M + ' method: the paper gives no ' + (out.p.miss ? 'δP' : 'δH') + ' contribution for the group “' + (out.p.miss || out.h.miss) + '”.' };
+    const dD = dd.s, dP = out.p.v, dH = out.h.v, dT = Math.sqrt(dD * dD + dP * dP + dH * dH);
+    const nC = mol.atoms.filter(a => a.el === 'C').length;
+    if (nC < 3) notes.push('The Stefanis–Panayiotou method was fitted to molecules with three or more carbon atoms; expect larger errors here.');
+    if (out.p.usedLow || out.h.usedLow) notes.push('Low-value equation used for ' + [out.p.usedLow ? 'δP' : '', out.h.usedLow ? 'δH' : ''].filter(Boolean).join(' and ') + ' (estimate below 3 MPa½).');
+    const counts = {}; Object.keys(fr.first).forEach(k => { counts[k] = fr.first[k]; }); Object.keys(fr.second).forEach(k => { counts['2nd: ' + k] = fr.second[k]; });
+    const V = leBasVolume(mol, g, rg);
+    return { supported: true, method: M, dD, dP, dH, dT, V, groups: counts, partial: [], notes, rows: rankSolvents(dD, dP, dH, V), detail: { p: out.p, h: out.h } };
+  }
+
+  // Method switch: 'auto' (Stefanis–Panayiotou, the broader published method, falling back to Hoftyzer–Van Krevelen
+  // where the paper has no value), 'sp' or 'vk'. In 'auto' mode a result also carries `alt`: the other method's
+  // numbers when it can handle the structure too, so the two estimates can be compared.
+  function hansen(mol, g, rg, opt) {
+    g = g || buildGraph(mol); rg = rg || findRings(g);
+    const m = (opt && opt.method) || 'auto';
+    if (m === 'sp') return hansenSP(mol, g, rg);
+    if (m === 'vk') return hansenVK(mol, g, rg);
+    const sp = hansenSP(mol, g, rg), vk = hansenVK(mol, g, rg);
+    const brief = x => ({ method: x.method, dD: x.dD, dP: x.dP, dH: x.dH, dT: x.dT });
+    if (sp.supported) { sp.alt = vk.supported ? brief(vk) : null; return sp; }
+    if (vk.supported) { vk.notes.unshift('The Stefanis–Panayiotou method could not be used: ' + sp.reason.replace(/^Stefanis–Panayiotou method: /, '').replace(/\.$/, '') + '. Hoftyzer–Van Krevelen was used instead.'); vk.alt = null; return vk; }
+    return { supported: false, reason: sp.reason + ' Hoftyzer–Van Krevelen method: ' + vk.reason };
   }
 
   /* --------------------------------------------------------- file export */

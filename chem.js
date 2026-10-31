@@ -885,6 +885,10 @@
     'CH3': [420, 0, 0, 33.5], 'CH2': [270, 0, 0, 16.1], 'CH': [80, 0, 0, -1.0], 'C': [-70, 0, 0, -19.2],
     '=CH2': [400, 0, 0, 28.5], '=CH': [200, 0, 0, 13.5], '=C<': [70, 0, 0, -5.5],
     'C6H5': [1430, 110, 0, 71.4], 'C6H4': [1270, 110, 0, 52.4],
+    // unsubstituted benzene: fitted so the ring reproduces benzene itself (dD 18.4, dP 0, dH 2.0, V 89.4)
+    'C6H6': [1645, 0, 360, 89.4],
+    // tri- / tetra-substituted rings: extrapolated from the C6H5 → C6H4 step (about −160 in Fd and −19 cm³/mol per H removed)
+    'C6H3': [1110, 110, 0, 33.4], 'C6H2': [950, 110, 0, 14.4],
     'F': [220, 0, 0, 18.0], 'Cl': [450, 550, 400, 24.0], 'Br': [550, 0, 0, 30.0],
     'CN': [430, 1100, 2500, 24.0], 'OH': [210, 500, 20000, 10.0], 'O': [100, 400, 3000, 3.8],
     'COOH': [530, 420, 10000, 28.5], 'CO': [290, 770, 2000, 10.8], 'COO': [390, 490, 7000, 18.0],
@@ -908,19 +912,22 @@
     const n = mol.atoms.length;
     if (!n) return { supported: false, reason: 'Empty drawing.' };
     if (mol.atoms.some(a => (a.charge || 0) !== 0 && !(a.el === 'N' || a.el === 'O'))) return { supported: false, reason: 'Charged species are not supported.' };
-    const ar = aromaticity(mol, g, rg), used = new Set(), groups = [], bad = [];
+    const ar = aromaticity(mol, g, rg), used = new Set(), groups = [], bad = [], extra = [];
     const el = i => mol.atoms[i].el, lab = i => el(i) + (i + 1);
     const add1 = (name, atoms) => { groups.push({ name, atoms }); atoms.forEach(a => used.add(a)); };
-    // 1. benzene rings (mono- or di-substituted, not fused)
+    // 1. benzene rings with 0–4 substituents (not fused)
     ar.rings.forEach(r => {
       if (r.type !== 'aromatic' || r.size !== 6 || r.atoms.some(a => el(a) !== 'C')) return;
       if (rg.systems[rg.ringSys[ar.rings.indexOf(r)]].length > 1) return;
       const inRing = new Set(r.atoms);
       const k = r.atoms.reduce((s, a) => s + g.nbrs[a].filter(e => !inRing.has(e.j)).length, 0);
-      if (k === 1) add1('C6H5', r.atoms.slice()); else if (k === 2) add1('C6H4', r.atoms.slice());
-      else bad.push('benzene ring with ' + k + ' substituent' + (k === 1 ? '' : 's') + ' (only mono- and di-substituted rings are tabulated)');
+      const nm = ['C6H6', 'C6H5', 'C6H4', 'C6H3', 'C6H2'][k];
+      if (nm) {
+        add1(nm, r.atoms.slice());
+        if (k >= 3) extra.push('Benzene ring with ' + k + ' substituents: its group values are extrapolated, not tabulated, so treat the result as less certain.');
+      } else bad.push('benzene ring with ' + k + ' substituents (up to 4 are supported)');
     });
-    for (let i = 0; i < n; i++) if (!used.has(i) && ar.rings.some(r => r.type === 'aromatic' && r.atoms.includes(i))) { bad.push('aromatic or heteroaromatic ring other than a mono- / di-substituted benzene'); used.add(i); }
+    for (let i = 0; i < n; i++) if (!used.has(i) && ar.rings.some(r => r.type === 'aromatic' && r.atoms.includes(i))) { bad.push('aromatic or heteroaromatic ring other than a benzene ring (fused rings and heteroaromatics are not tabulated)'); used.add(i); }
     // 2. carbon-centred functional groups
     for (let c = 0; c < n; c++) {
       if (used.has(c) || el(c) !== 'C') continue;
@@ -932,7 +939,15 @@
       const oh = singles.find(e => el(e.j) === 'O' && g.hc[e.j] === 1 && g.nbrs[e.j].length === 1);
       const oe = singles.find(e => el(e.j) === 'O' && g.hc[e.j] === 0 && g.nbrs[e.j].length === 2);
       const nn = singles.find(e => el(e.j) === 'N');
-      if (nn) { bad.push('amide / carbamate-type group at ' + lab(c) + ' (not tabulated)'); [c, dO.j, nn.j].forEach(a => used.add(a)); }
+      if (nn) {
+        // amide R–C(=O)–NH2 / R–C(=O)–NHR': built from the tabulated CO + NH2 / NH groups.
+        // Not accepted: tertiary amides, ureas / carbamates (extra O or N on the carbonyl carbon), formamides, charged or unsaturated N.
+        const N = nn.j, nN = g.nbrs[N], simple = !(mol.atoms[N].charge) && nN.every(e => e.order === 1) && g.hc[c] === 0 && singles.length === 2 && singles.every(e => e === nn || el(e.j) === 'C') && (g.hc[N] === 1 || g.hc[N] === 2);
+        if (simple) {
+          add1('CO', [c, dO.j]); add1(g.hc[N] === 2 ? 'NH2' : 'NH', [N]);
+          if (!extra.some(t => t.indexOf('Amide') === 0)) extra.push('Amide group: estimated as a carbonyl (CO) plus an amine (NH / NH2) increment. Real amides hydrogen-bond more strongly, so δH is probably underestimated.');
+        } else { bad.push('amide / urea / carbamate-type group at ' + lab(c) + ' (only primary and secondary amides are supported)'); [c, dO.j, N].forEach(a => used.add(a)); }
+      }
       else if (oh && singles.every(e => e === oh || el(e.j) === 'C') && others.length <= 2) add1('COOH', [c, dO.j, oh.j]);
       else if (oe && others.length === 2 && singles.every(e => el(e.j) === 'C' || e === oe) ) add1('COO', [c, dO.j, oe.j]);
       else if (g.hc[c] === 1 && others.length === 1) { bad.push('aldehyde at ' + lab(c) + ' (not reliably tabulated)'); [c, dO.j].forEach(a => used.add(a)); }
@@ -971,7 +986,7 @@
     groups.forEach(gr => { const p = HVK[gr.name]; Fd += p[0]; Fp2 += p[1] * p[1]; Eh += p[2]; V += p[3]; counts[gr.name] = (counts[gr.name] || 0) + 1; if (HVK_PARTIAL[gr.name] && partial.indexOf(gr.name) < 0) partial.push(gr.name); });
     if (V < 5) return { supported: false, reason: 'The molecule is too small or too branched for the molar-volume increments to give a sensible result.' };
     // several chlorines on one carbon partly cancel (empirical factors fitted to CH2Cl2, CHCl3, CCl4)
-    const notes = [], ps = [0, 1, 0.73, 0.4, 0];
+    const notes = extra.slice(), ps = [0, 1, 0.73, 0.4, 0];
     const clOn = new Map(); groups.forEach(x => { if (x.name === 'Cl') { const c = g.nbrs[x.atoms[0]][0]; if (c) clOn.set(c.j, (clOn.get(c.j) || 0) + 1); } });
     clOn.forEach(k => { if (k >= 2) { const fp = HVK.Cl[1]; Fp2 += Math.pow(fp * ps[Math.min(k, 4)], 2) - k * fp * fp; notes.push('Several Cl on one carbon: polar term reduced with an empirical factor.'); } });
     let dD = Fd / V, dP = Math.sqrt(Math.max(Fp2, 0)) / V, dH = Math.sqrt(Math.max(Eh, 0) / V), dT;

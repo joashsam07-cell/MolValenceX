@@ -94,7 +94,8 @@
   </aside>
   
   <div class="split" id="spl" title="Drag to resize · double-click to reset"></div>
-  <section id="stage"><canvas id="ed"></canvas></section>
+  <section id="stage"><canvas id="ed"></canvas>
+    <div id="zoombox"><button id="zin" title="Zoom in" aria-label="Zoom in">+</button><span id="zpct">100%</span><button id="zout" title="Zoom out" aria-label="Zoom out">&minus;</button><button id="zfit" title="Fit molecule to screen" aria-label="Fit to screen">&#x2922;</button></div></section>
   <div class="split" id="spr" title="Drag to resize · double-click to reset"></div>
   
   <aside id="panel">
@@ -109,6 +110,7 @@
       <button id="ez" class="primary">Check E/Z, cis / trans</button>
       <button id="rs" class="primary">Check R/S &amp; optical activity</button>
       <button id="hsp" class="primary">Estimate solubility (Hansen)</button>
+      <button id="full" class="primary">Complete analysis + PDF report</button>
       <div id="result"></div>
     </div>
     <div id="tab-d" hidden>

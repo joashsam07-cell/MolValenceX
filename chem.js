@@ -1504,8 +1504,36 @@
   // Method switch: 'auto' (Stefanis–Panayiotou, the broader published method, falling back to Hoftyzer–Van Krevelen
   // where the paper has no value), 'sp' or 'vk'. In 'auto' mode a result also carries `alt`: the other method's
   // numbers when it can handle the structure too, so the two estimates can be compared.
+  // Sugar / polyol rule: a saturated C,H,O molecule with at least 3 alcohol OH groups and at most 1.5 carbons per OH
+  // (glycerol, glucose, sucrose, mannitol ...) dissolves readily in water and in glycols. Hansen distance cannot see
+  // hydration and hydrogen-bond networks, so for these three solvents the verdict is set by the rule; all others stay with HSP.
+  const POLYOL_SOLVENTS = ['Water', 'Ethylene glycol', 'Glycerol'];
+  function polyolRule(mol, g, r) {
+    if (mol.atoms.some(a => (a.charge || 0) !== 0 || ['C', 'O'].indexOf(a.el) < 0)) return;
+    // open-chain aldoses / ketoses (glucose, fructose drawn as chains) carry exactly one C=O; acids, esters and any C=C are excluded
+    const dbl = g.bonds.filter(b => b.order !== 1);
+    if (dbl.length > 1 || dbl.some(b => b.order !== 2)) return;
+    if (dbl.length === 1) {
+      const b = dbl[0], oi = mol.atoms[b.i].el === 'O' ? b.i : mol.atoms[b.j].el === 'O' ? b.j : -1;
+      if (oi < 0) return;
+      const cc = oi === b.i ? b.j : b.i;
+      if (g.nbrs[cc].some(e => e.order === 1 && mol.atoms[e.j].el === 'O')) return;
+    }
+    let nOH = 0;
+    mol.atoms.forEach((a, i) => { if (a.el === 'O' && g.hc[i] === 1 && g.nbrs[i].length === 1 && mol.atoms[g.nbrs[i][0].j].el === 'C') nOH++; });
+    const nC = mol.atoms.filter(a => a.el === 'C').length;
+    if (nOH < 3 || nC / nOH > 1.5) return;
+    r.rows.forEach(x => { if (POLYOL_SOLVENTS.indexOf(x.name) >= 0) { if (x.verdict !== 'good') x.override = true; x.verdict = 'good'; } });
+    r.polyol = true;
+    r.notes.push('Sugar / polyol rule: with ' + nOH + ' OH groups on ' + nC + ' carbons, water, ethylene glycol and glycerol are listed as good solvents because hydration and hydrogen-bond networks, which Hansen distance cannot capture, dominate. All other solvents are still judged by Hansen distance.');
+  }
   function hansen(mol, g, rg, opt) {
     g = g || buildGraph(mol); rg = rg || findRings(g);
+    const r = hansenCore(mol, g, rg, opt);
+    if (r.supported) polyolRule(mol, g, r);
+    return r;
+  }
+  function hansenCore(mol, g, rg, opt) {
     const m = (opt && opt.method) || 'auto';
     if (m === 'sp') return hansenSP(mol, g, rg);
     if (m === 'vk') return hansenVK(mol, g, rg);

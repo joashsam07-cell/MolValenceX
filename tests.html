@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MolValenceX – Test results</title>
+<style>
+  body { margin: 0; padding: 24px; font: 14px/1.5 system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #94a3b8; margin-bottom: 16px; }
+  #banner { padding: 16px 20px; border-radius: 12px; font-size: 18px; font-weight: 700; margin-bottom: 16px; background: #334155; }
+  #banner.ok { background: #166534; } #banner.bad { background: #991b1b; }
+  table { border-collapse: collapse; width: 100%; max-width: 640px; margin-bottom: 20px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.1); }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .g { color: #4ade80; } .r { color: #f87171; font-weight: 700; } .a { color: #fbbf24; }
+  h2 { font-size: 15px; margin: 18px 0 6px; }
+  pre { background: rgba(0,0,0,.35); padding: 12px; border-radius: 10px; overflow-x: auto; margin: 0; white-space: pre-wrap; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #6366f1; background: #4f46e5; color: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>⬡ MolValenceX – automated tests</h1>
+<div class="sub">Runs <code>tests.js</code> against <code>chem.js</code> and <code>smiles.js</code> in your browser. Nothing is uploaded.</div>
+<div id="banner">Running…</div>
+<table id="tbl"><thead><tr><th>Section</th><th class="n">Passed</th><th class="n">Failed</th><th class="n">Known</th></tr></thead><tbody></tbody></table>
+<h2>Failures and known issues</h2>
+<pre id="log">(none yet)</pre>
+<p><button onclick="location.reload()">Run again</button></p>
+
+<script>
+  const lines = [];
+  window.__testOut = s => { if (/^\s+(FAIL|KNOWN)/.test(s)) lines.push(s); };
+  window.__testDone = (secs, pass, fail, known) => {
+    const b = document.getElementById('banner');
+    b.textContent = (fail ? '✗ ' : '✓ ') + pass + ' passed · ' + fail + ' failed · ' + known + ' known issue' + (known === 1 ? '' : 's');
+    b.className = fail ? 'bad' : 'ok';
+    document.querySelector('#tbl tbody').innerHTML = secs.map(s =>
+      '<tr><td>' + s.name + '</td><td class="n g">' + s.pass + '</td><td class="n ' + (s.fail ? 'r' : '') + '">' + s.fail + '</td><td class="n ' + (s.known ? 'a' : '') + '">' + s.known + '</td></tr>').join('');
+    if (lines.length) document.getElementById('log').textContent = lines.join('\n');
+  };
+  window.addEventListener('error', e => {
+    const b = document.getElementById('banner'); b.className = 'bad';
+    b.textContent = '✗ Could not run: ' + e.message + ' (are chem.js and smiles.js in the same folder?)';
+  });
+</script>
+<script src="chem.js"></script>
+<script src="smiles.js"></script>
+<script src="tests.js"></script>
+</body>
+</html>

@@ -232,16 +232,57 @@ $('#clear').onclick = () => { mol = { atoms: [], bonds: [] }; sel = null; commit
 $('#clean').onclick = () => { const p = C.clean2D(mol, BL); mol.atoms.forEach((a, i) => { a.x = p[i][0]; a.y = p[i][1]; }); commit(); };
 const dl = (name, text) => { const u = URL.createObjectURL(new Blob([text])), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000); };
 $('#expmol').onclick = () => dl('molecule.mol', C.toMolBlock(mol, BL));
-$('#impsmi').onclick = () => {
-  const s = prompt('Paste a SMILES string (e.g. CC(=O)Oc1ccccc1C(=O)O):'); if (!s || !s.trim()) return;
-  let r; try { r = C.fromSMILES(s, BL); } catch (er) { alert('Could not read SMILES: ' + er.message); return; }
+const drawSmiles = s => {                                          // shared by Import SMILES and the PubChem search; true when drawn
+  let r; try { r = C.fromSMILES(s, BL); } catch (er) { alert('Could not read SMILES: ' + er.message); return false; }
   const W = cv.clientWidth || 600, H = cv.clientHeight || 400; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   r.atoms.forEach(a => { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
   const dx = W / 2 - (x0 + x1) / 2, dy = H / 2 - (y0 + y1) / 2; nid = 1; const ids = r.atoms.map(() => nid++);
   mol = { atoms: r.atoms.map((a, i) => ({ id: ids[i], el: a.el, x: a.x + dx, y: a.y + dy, charge: a.charge || 0 })), bonds: r.bonds.map(b => ({ id: nid++, a: ids[b.a], b: ids[b.b], order: b.order, stereo: b.stereo || 0 })) };   // stereo 1 / 2 = wedge / dash, narrow end at a
   sel = null; commit();
   if (r.skippedStereo) alert('The structure was drawn, but the stereochemistry of ' + r.skippedStereo + ' centre' + (r.skippedStereo > 1 ? 's' : '') + ' could not be shown as a wedge / dash (unusual bonding or crowded geometry).');
+  return true;
 };
+$('#impsmi').onclick = () => {
+  const s = prompt('Paste a SMILES string (e.g. CC(=O)Oc1ccccc1C(=O)O):'); if (!s || !s.trim()) return;
+  drawSmiles(s);
+};
+
+/* PubChem name search. Privacy: the ONLY thing sent is the name typed in the box (to NIH's PubChem); the drawing never leaves the browser.
+   PubChem renamed its SMILES properties, so the current name is tried first and the older ones as fallbacks. */
+const PC_URL = 'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/';
+async function pubchemLookup(name) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000);
+  try {
+    for (const prop of ['SMILES', 'IsomericSMILES', 'CanonicalSMILES']) {
+      const res = await fetch(PC_URL + encodeURIComponent(name) + '/property/' + prop + ',Title/JSON', { signal: ctl.signal });
+      if (res.status === 404) return null;                          // no compound with that name
+      if (res.status === 400) continue;                             // property name not accepted: try the next one
+      if (!res.ok) throw new Error('PubChem answered HTTP ' + res.status);
+      const j = await res.json(), list = (j && j.PropertyTable && j.PropertyTable.Properties) || [], p = list[0];
+      if (!p) return null;
+      const smiles = p.SMILES || p.IsomericSMILES || p.ConnectivitySMILES || p.CanonicalSMILES;
+      if (smiles) return { smiles, title: p.Title || name, cid: p.CID, count: list.length };
+    }
+    throw new Error('PubChem did not accept the request');
+  } finally { clearTimeout(timer); }
+}
+async function pubchemSearch() {
+  const box = $('#pcname'), go = $('#pcgo'), msg = $('#pcmsg'), name = box.value.trim();
+  if (!name) return;
+  go.disabled = true; msg.textContent = 'Searching PubChem (only the name is sent)…';
+  try {
+    const hit = await pubchemLookup(name);
+    if (!hit) msg.textContent = 'No compound named “' + name + '” found in PubChem.';
+    else if (drawSmiles(hit.smiles)) msg.textContent = 'Loaded ' + hit.title + ' (PubChem CID ' + hit.cid + ')' + (hit.count > 1 ? ' · ' + hit.count + ' matches, showing the first' : '');
+    else msg.textContent = 'Found ' + hit.title + ' (CID ' + hit.cid + ') but it could not be drawn here.';
+  } catch (er) {
+    msg.textContent = er.name === 'AbortError' ? 'PubChem took too long to answer. Try again.'
+      : /^PubChem (answered|did not)/.test(er.message) ? 'PubChem is busy or returned an error (' + er.message.replace(/^PubChem /, '') + '). Try again in a moment.'
+      : 'Could not reach PubChem (offline, blocked, or the browser refused the request).';
+  } finally { go.disabled = false; }
+}
+$('#pcgo').onclick = pubchemSearch;
+$('#pcname').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pubchemSearch(); } });
 $('#expsmi').onclick = () => {
   if (!mol.atoms.length) { alert('Draw a molecule first.'); return; }
   const s = C.toSMILES(mol);
@@ -536,7 +577,7 @@ $('#hsp').onclick = () => {
   const warn = bad.length ? '<div class="warn">Over-valent atom(s): ' + bad.join(', ') + ' — results may be unreliable.</div>' : '';
   if (!r.supported) { out.innerHTML = warn + '<div class="warn">' + r.reason + '</div><div class="hint">Covered: hydrocarbons (including alkenes, alkynes, benzene and naphthalene-type fused rings), alcohols and phenols, ethers, aldehydes, ketones, acids, esters, nitriles, nitro compounds, primary / secondary / tertiary amines, N,N-dimethylamides, pyridine-type rings, furan, thiophene and halogen compounds. Not covered: N–H heterocycles (pyrrole, indole, imidazole), ring C=O on aromatic rings (pyridones, xanthines, uracils), ureas, carbamates, carbonates, sulfoxides, formates, charged species and elements other than C, H, N, O, S and the halogens.</div>'; return; }
   const f1 = x => x.toFixed(1), grp = Object.keys(r.groups).map(k => k + (r.groups[k] > 1 ? ' ×' + r.groups[k] : '')).join(', ');
-  const list = (v, title) => { const rows = r.rows.filter(x => x.verdict === v); return '<div class="lbl" style="margin-top:8px">' + title + '</div>' + (rows.length ? rows.map(x => '<span class="sol ' + v + '" title="Ra = ' + f1(x.ra) + ', chi = ' + x.chi.toFixed(2) + ' (limit ' + x.chic.toFixed(2) + ')">' + x.name + ' <small>' + f1(x.ra) + '</small></span>').join('') : '<div class="hint">none</div>'); };
+  const list = (v, title) => { const rows = r.rows.filter(x => x.verdict === v); return '<div class="lbl" style="margin-top:8px">' + title + '</div>' + (rows.length ? rows.map(x => '<span class="sol ' + v + '" title="' + (x.override ? 'Set by the sugar / polyol rule. ' : '') + 'Ra = ' + f1(x.ra) + ', chi = ' + x.chi.toFixed(2) + ' (limit ' + x.chic.toFixed(2) + ')">' + x.name + ' <small>' + f1(x.ra) + '</small></span>').join('') : '<div class="hint">none</div>'); };
   let h = warn + '<div class="card"><div class="lbl">Hansen solubility parameters (estimate, MPa<sup>½</sup>)</div>' +
     '<div class="row"><span>δD dispersion</span><b>' + f1(r.dD) + '</b></div><div class="row"><span>δP polar</span><b>' + f1(r.dP) + '</b></div>' +
     '<div class="row"><span>δH hydrogen bonding</span><b>' + f1(r.dH) + '</b></div><div class="row"><span>δT total (Hildebrand)</span><b>' + f1(r.dT) + '</b></div>' +
@@ -545,7 +586,7 @@ $('#hsp').onclick = () => {
     '<div class="hint" style="margin-top:6px">Groups used: ' + grp + '</div></div>';
   if (r.partial.length) h += '<div class="warn">' + r.partial.join(', ') + ': only the dispersion term is tabulated, so δP / δH are underestimated.</div>';
   r.notes.forEach(n => { h += '<div class="warn">' + n + '</div>'; });
-  if (r.dH >= 15) h += '<div class="warn">Very polar solute: HSP cannot judge water or polyol solvents (glycerol, glycols) reliably here, because hydration and crystal packing decide the outcome. Treat their verdicts with caution.</div>';
+  if (r.dH >= 15 && !r.polyol) h +='<div class="warn">Very polar solute: HSP cannot judge water or polyol solvents (glycerol, glycols) reliably here, because hydration and crystal packing decide the outcome. Treat their verdicts with caution.</div>';
   h += list('good', 'Likely to dissolve / mix') + list('partial', 'Borderline') + list('poor', 'Unlikely');
   h += '<div class="hint" style="margin-top:8px">Chip numbers are the Hansen distance Ra = √(4ΔδD² + ΔδP² + ΔδH²) (smaller = more alike). Verdicts use the Flory–Huggins test χ = V<sub>solvent</sub>·Ra² / (4RT) against the mixing limit χ<sub>c</sub>, which depends on the size of your molecule, so small molecules mix with a wider range of solvents than large ones. ' + (/Stefanis/.test(r.method) ? 'δD, δP, δH come from the Stefanis–Panayiotou group-contribution method (Int. J. Thermophys. 29, 2008, 568–585). It was fitted on molecules with three or more carbons; the paper reports average errors of about 0.4 (δD), 0.9 (δP) and 0.8 (δH) MPa<sup>½</sup> on its data, and in a check on common solvents small alcohols came out with δH about 3–4 too low.' : 'δD, δP, δH come from Hoftyzer–Van Krevelen group contributions (typical error about 1 MPa<sup>½</sup> for common liquids).') + ' “Like dissolves like” only: water is predicted poorly, and crystal lattice energy, ionisation, temperature and concentration are ignored, so use it to compare solvents, not to predict a solubility value.</div>';
   out.innerHTML = h;
@@ -583,6 +624,7 @@ const STEPS = [
   { sel: '#examples', t: 'Load example', x: 'Open a ready-made molecule (benzene, azulene, tropylium, cis / trans-butene…). Note: an example <b>replaces</b> the current drawing. Use Undo to bring yours back.' },
   { sel: ['#undo', '#redo', '#clean', '#clear'], t: 'Edit controls', x: '<b>Undo / Redo</b> (Ctrl+Z / Ctrl+Y). <b>Clean up</b> tidies bond lengths and angles. <b>Clear</b> empties the canvas.' },
   { sel: '#expmol', t: 'Export MOL', x: 'Saves the drawing as a standard <b>.mol</b> file that opens in ChemDraw, Avogadro, MolView and similar programs.' },
+  { sel: '#pcname', t: 'Search PubChem by name', x: 'Type a compound name (for example <b>aspirin</b>, <b>caffeine</b> or an IUPAC name) and press <b>Enter</b>: the first match from PubChem is drawn with its stereochemistry, ready to edit or analyse. <b>Only the name you type is sent</b> to PubChem (NIH); your drawing never leaves your browser. Everything else in MolValenceX still works offline.' },
   { sel: '#impsmi', t: 'SMILES import / export', x: '<b>Import SMILES</b> draws a molecule from a pasted SMILES string (it replaces the current drawing; Undo brings yours back). <b>Export SMILES</b> gives the SMILES of what you drew and copies it. Tetrahedral stereo works both ways: <b>@ / @@</b> in an imported SMILES become wedge / dash bonds, and the wedge / dash bonds you draw (narrow end at the stereocentre) are written out as @ / @@. E/Z double-bond geometry is not converted yet.' },
   { sel: '#stage', t: 'Drawing canvas', x: 'Click empty space to place an atom. <b>Drag from an atom</b> to pull out a bond. Click an existing bond with a bond tool to change its order. Hydrogens are filled in automatically from valence, so draw only the heavy atoms. A red dashed ring marks an over-valent atom.' },
   { sel: '#bondtools', t: 'Bond & edit tools', x: '<b>⇱ Select</b>: drag an atom to move it, drag empty space to pan. <b>Single / double / triple</b> bonds (keys 1, 2, 3). <b>Wedge</b> = bond towards you, <b>dash</b> = away; they set stereochemistry and the 3D shape. <b>⌫</b> erases an atom or bond. <b>+ / −</b> add a formal charge to the atom you click.' },
@@ -596,7 +638,6 @@ const STEPS = [
   { sel: '#ez', tab: 'a', demoEx: 'cis-2-butene', run: () => $('#ez').click(), t: 'E / Z and cis / trans', x: 'Finds every acyclic <b>C=C, C=N or N=N</b> double bond, ranks the groups on each end by <b>CIP rules</b> and labels it <b>E</b> or <b>Z</b> (plus cis / trans for simple alkenes). The labels appear on the canvas. A cis-2-butene demo is drawn here.' },
   { sel: '#rs', tab: 'a', demoEx: 'D-glucose (Fischer)', run: () => $('#rs').click(), t: 'R / S and optical activity', x: 'Finds every <b>stereocentre</b> (sp³ atom with four different groups), ranks the groups by <b>CIP rules</b> and uses your <b>wedge / dash</b> bonds, or a <b>Fischer cross</b> (horizontal = towards you, vertical = away), to label it <b>R</b> or <b>S</b>. It then tells you if the molecule is <b>chiral (optically active)</b>, <b>meso</b> or has no stereocentre. D-glucose in Fischer form is drawn as a demo.' },
   { sel: '#hsp', tab: 'a', demoEx: 'Ethyl acetate', run: () => $('#hsp').click(), t: 'Solubility (Hansen)', x: 'Adds up <b>group contributions</b> to estimate the Hansen parameters <b>δD, δP, δH</b> (and the Hildebrand δT), then ranks 29 common solvents by their Hansen distance <b>Ra</b> and a size-aware Flory–Huggins test. Solvents close to the molecule are the likely ones to dissolve it. A rough <b>like-dissolves-like</b> guide; ethyl acetate is drawn as a demo.' },
-  { sel: '#tab-a button[disabled]', tab: 'a', t: 'Coming soon', x: '<b>IUPAC naming</b> is planned for a later version.' },
   { sel: '#to3d', tab: 'd', demo: true, t: '3D view', x: '<b>Convert drawing to 3D</b> builds a 3D model from your 2D sketch. Wedge and dash bonds are used to set chirality.' },
   { sel: '.canvas-container-3d', tab: 'd', demo: true, run: () => $('#to3d').click(), t: '3D viewer', x: '<b>Drag</b> to rotate, <b>scroll</b> to zoom. The yellow arrow is the dipole moment (δ+ → δ−).' },
   { sel: '.row3', tab: 'd', t: 'Display options', x: 'Switch between <b>Ball &amp; stick</b>, <b>Sticks</b> and <b>Space-filling</b>; show or hide H, atom labels, auto-spin and the dipole arrow.' },

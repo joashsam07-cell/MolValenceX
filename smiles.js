@@ -164,13 +164,111 @@
         else { const m = nr++; hh = h + (m === 0 ? ts[c] : m === 1 ? -ts[c] : 2) * Math.PI / 3; }
         ts[e.j] = -ts[c];
         pos[e.j] = [pos[c][0] + BL * Math.cos(hh), pos[c][1] + BL * Math.sin(hh)];
-        place(e.j, hh);
+        enter(e.j, hh);
       }
+    }
+    /* ---- ring systems: every ring (single or fused) is laid out as a regular polygon, fused rings sharing an edge
+       with their neighbour. The turn-by-turn walk used before cannot close a ring on atoms that are already placed
+       (it mangled naphthalene, and any ring entered from a chain such as the benzene in phenetole). A ring system is
+       placed as one block the moment the walk first reaches one of its atoms. */
+    const rings = rg.rings, rc = rings.map(() => null);          // rc[r] = polygon centre once ring r is placed
+    const nRing = rings.length, grp = rings.map((_, i) => i);
+    const find = x => grp[x] === x ? x : (grp[x] = find(grp[x]));
+    for (let a = 0; a < nRing; a++) for (let b = a + 1; b < nRing; b++)
+      if (rings[a].atoms.filter(x => rings[b].atoms.indexOf(x) >= 0).length >= 2) grp[find(a)] = find(b);
+    const clusters = {}, clusterOf = Array(n).fill(undefined), cdone = {};
+    rings.forEach((r, i) => { const key = find(i); (clusters[key] = clusters[key] || []).push(i); r.atoms.forEach(at => { if (clusterOf[at] === undefined) clusterOf[at] = key; }); });
+    const radius = k => BL / (2 * Math.sin(Math.PI / k));
+    // walk ring order from placed atom `a` (which is at angle `ang` round `cen`) filling in the polygon
+    function polygon(ring, a, cen, ang) {
+      const k = ring.size, ia = ring.atoms.indexOf(a), R = radius(k);
+      let sgn = 1;
+      const nb = ring.atoms[(ia + 1) % k];
+      if (pos[nb]) { const cr = (pos[a][0] - cen[0]) * (pos[nb][1] - cen[1]) - (pos[a][1] - cen[1]) * (pos[nb][0] - cen[0]); sgn = cr >= 0 ? 1 : -1; }
+      else { const pv = ring.atoms[(ia + k - 1) % k]; if (pos[pv]) { const cr = (pos[a][0] - cen[0]) * (pos[pv][1] - cen[1]) - (pos[a][1] - cen[1]) * (pos[pv][0] - cen[0]); sgn = cr >= 0 ? -1 : 1; } }
+      for (let t = 0; t < k; t++) {
+        const at = ring.atoms[(ia + t) % k];
+        if (pos[at]) continue;
+        const th = ang + sgn * 2 * Math.PI * t / k;
+        pos[at] = [cen[0] + R * Math.cos(th), cen[1] + R * Math.sin(th)];
+      }
+    }
+    function placeCluster(key, a, cen) {
+      cdone[key] = true;
+      const cl = clusters[key], ri0 = cl.find(r => rings[r].atoms.indexOf(a) >= 0);
+      rc[ri0] = cen;
+      polygon(rings[ri0], a, cen, Math.atan2(pos[a][1] - cen[1], pos[a][0] - cen[0]));
+      let progress = true;
+      while (progress) {
+        progress = false;
+        for (const ri of cl) {
+          if (rc[ri]) continue;
+          const ring = rings[ri], k = ring.size;
+          let pair = null;                                         // an edge of this ring whose two atoms are already placed
+          for (let t = 0; t < k && !pair; t++) { const x = ring.atoms[t], y = ring.atoms[(t + 1) % k]; if (pos[x] && pos[y]) pair = [x, y]; }
+          if (!pair) continue;
+          let host = -1;                                           // placed ring that owns that edge
+          cl.forEach(rj => { if (rc[rj] && rings[rj].atoms.indexOf(pair[0]) >= 0 && rings[rj].atoms.indexOf(pair[1]) >= 0) host = rj; });
+          if (host < 0) continue;
+          const mx = (pos[pair[0]][0] + pos[pair[1]][0]) / 2, my = (pos[pair[0]][1] + pos[pair[1]][1]) / 2;
+          let nx = -(pos[pair[1]][1] - pos[pair[0]][1]), ny = pos[pair[1]][0] - pos[pair[0]][0];
+          const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+          if ((mx + nx - rc[host][0]) ** 2 + (my + ny - rc[host][1]) ** 2 < (mx - nx - rc[host][0]) ** 2 + (my - ny - rc[host][1]) ** 2) { nx = -nx; ny = -ny; }   // away from the host ring
+          const ap = BL / (2 * Math.tan(Math.PI / k));
+          rc[ri] = [mx + nx * ap, my + ny * ap];
+          polygon(ring, pair[0], rc[ri], Math.atan2(pos[pair[0]][1] - rc[ri][1], pos[pair[0]][0] - rc[ri][0]));
+          progress = true;
+        }
+      }
+      // (a ring of the cluster that cannot be reached this way, e.g. in a bridged system, is left to the relaxer)
+      const inCl = new Set(); cl.forEach(ri => rings[ri].atoms.forEach(x => inCl.add(x)));
+      inCl.forEach(c => {
+        if (!pos[c]) return;
+        const free = adj[c].filter(e => !pos[e.j]);
+        if (!free.length) return;
+        let sx = 0, sy = 0;
+        adj[c].forEach(e => { if (pos[e.j]) { const l = Math.hypot(pos[e.j][0] - pos[c][0], pos[e.j][1] - pos[c][1]) || 1; sx += (pos[e.j][0] - pos[c][0]) / l; sy += (pos[e.j][1] - pos[c][1]) / l; } });
+        const h = Math.atan2(-sy, -sx);
+        free.forEach((e, m) => {
+          if (pos[e.j]) return;
+          const hh = free.length === 1 ? h : h + (m === 0 ? 1 : m === 1 ? -1 : 0) * Math.PI / 3;
+          ts[e.j] = 1;
+          pos[e.j] = [pos[c][0] + BL * Math.cos(hh), pos[c][1] + BL * Math.sin(hh)];
+          enter(e.j, hh);
+        });
+      });
+    }
+    // called whenever the walk has just put atom j at its position, arriving with heading hh
+    function enter(j, hh) {
+      const key = clusterOf[j];
+      if (key !== undefined && !cdone[key]) {
+        let placed = 0; clusters[key].forEach(ri => rings[ri].atoms.forEach(x => { if (pos[x]) placed++; }));
+        if (placed === 1) {                                        // only j itself: the whole ring system can be dropped in, pointing away from the parent
+          const R = radius(rings[clusters[key].find(r => rings[r].atoms.indexOf(j) >= 0)].size);
+          placeCluster(key, j, [pos[j][0] + R * Math.cos(hh), pos[j][1] + R * Math.sin(hh)]);
+          return;
+        }
+      }
+      if (key !== undefined && !cdone[key]) {                      // spiro: the walk arrived through the one atom that two ring systems share
+        const plc = []; clusters[key].forEach(ri => rings[ri].atoms.forEach(x => { if (pos[x] && plc.indexOf(x) < 0) plc.push(x); }));
+        const sp = plc.length === 2 ? plc.find(x => x !== j) : undefined;
+        if (sp !== undefined && adj[j].some(e => e.j === sp)) {
+          const ri0 = clusters[key].find(r => rings[r].atoms.indexOf(j) >= 0), k = rings[ri0].size;
+          const mx = (pos[j][0] + pos[sp][0]) / 2, my = (pos[j][1] + pos[sp][1]) / 2;
+          let nx = -(pos[sp][1] - pos[j][1]), ny = pos[sp][0] - pos[j][0]; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+          let cx = 0, cy = 0, cnt = 0; adj[sp].forEach(e => { if (pos[e.j] && e.j !== j) { cx += pos[e.j][0]; cy += pos[e.j][1]; cnt++; } });
+          if (cnt) { cx /= cnt; cy /= cnt; if ((mx + nx - cx) ** 2 + (my + ny - cy) ** 2 < (mx - nx - cx) ** 2 + (my - ny - cy) ** 2) { nx = -nx; ny = -ny; } }
+          const ap = BL / (2 * Math.tan(Math.PI / k));
+          placeCluster(key, j, [mx + nx * ap, my + ny * ap]);
+          return;
+        }
+      }
+      place(j, hh);
     }
     let ox = 0;
     for (let s0 = 0; s0 < n; s0++) {
       if (pos[s0]) continue;
-      pos[s0] = [ox, 0]; place(s0, -Math.PI / 3);
+      pos[s0] = [ox, 0]; enter(s0, -Math.PI / 3);
       ox = Math.max.apply(null, pos.filter(Boolean).map(p => p[0])) + 2 * BL;
     }
     m0.atoms.forEach((a, i) => { a.x = pos[i][0]; a.y = pos[i][1]; });

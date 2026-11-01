@@ -14,8 +14,9 @@
     if (!s) throw new Error('empty string');
     const atoms = [], bonds = [], stack = [], open = {}, nbo = [];   // nbo[i]: neighbours of atom i in SMILES order (-1 = the implicit H)
     let prev = -1, sym = null, i = 0;
-    const link = (a, b, sy) => bonds.push({ a, b, sy });
+    const link = (a, b, sy) => bonds.push({ a, b, sy, dsym: (sy === '/' || sy === '\\') ? sy : '', dfrom: a });   // dsym / dfrom: direction of a / or \ mark (read as 'from dfrom towards the other atom')
     const addAtom = a => {
+      if (sym && prev < 0) throw new Error('a bond symbol needs an atom on both sides');
       const k = atoms.length; atoms.push(a); nbo.push([]);
       if (prev >= 0) { link(prev, k, sym); nbo[prev].push(k); nbo[k].push(prev); }
       if (a.tag && a.h === 1) nbo[k].push(-1);                        // [C@H]: the H comes right after the preceding atom
@@ -24,14 +25,22 @@
     while (i < s.length) {
       const ch = s[i];
       if (ch === '(') { if (prev < 0) throw new Error('branch without atom'); stack.push(prev); i++; continue; }
-      if (ch === ')') { if (!stack.length) throw new Error('unbalanced )'); prev = stack.pop(); sym = null; i++; continue; }
-      if ('-=#:/\\'.indexOf(ch) >= 0) { sym = ch; i++; continue; }
-      if (ch === '.') { prev = -1; sym = null; i++; continue; }
+      if (ch === ')') { if (!stack.length) throw new Error('unbalanced )'); if (sym) throw new Error('bond symbol before )'); prev = stack.pop(); sym = null; i++; continue; }
+      if ('-=#:/\\'.indexOf(ch) >= 0) { if (sym) throw new Error('two bond symbols in a row'); sym = ch; i++; continue; }
+      if (ch === '.') { if (prev < 0 || sym) throw new Error('empty fragment or dangling bond before "."'); prev = -1; sym = null; i++; continue; }
       if (ch === '%' || /\d/.test(ch)) {
         let d; if (ch === '%') { d = s.substr(i + 1, 2); i += 3; } else { d = ch; i++; }
         if (!/^\d+$/.test(d)) throw new Error('bad ring label');
         if (prev < 0) throw new Error('ring digit without atom');
-        if (open[d]) { const o = open[d]; delete open[d]; if (o.a === prev) throw new Error('ring closes on itself'); link(o.a, prev, sym || o.sy); nbo[o.a][o.pos] = prev; nbo[prev].push(o.a); }
+        if (open[d]) {
+          const o = open[d]; delete open[d];
+          if (o.a === prev) throw new Error('ring closes on itself');
+          if (bonds.some(x => (x.a === o.a && x.b === prev) || (x.a === prev && x.b === o.a))) throw new Error('two bonds between the same pair of atoms');
+          link(o.a, prev, sym || o.sy);
+          const nb = bonds[bonds.length - 1], isDir = z => z === '/' || z === '\\';
+          if (isDir(o.sy)) { nb.dsym = o.sy; nb.dfrom = o.a; } else if (isDir(sym)) { nb.dsym = sym; nb.dfrom = prev; } else nb.dsym = '';
+          nbo[o.a][o.pos] = prev; nbo[prev].push(o.a);
+        }
         else { open[d] = { a: prev, sy: sym, pos: nbo[prev].length }; nbo[prev].push(-2); }   // -2 = ring-closure placeholder, filled in when the ring closes
         sym = null; continue;
       }
@@ -55,12 +64,47 @@
       else throw new Error('unexpected "' + ch + '"');
       addAtom({ el, arom, charge: 0, h: 0, br: false });
     }
+    if (sym) throw new Error('the string ends with a bond symbol');
+    if (prev < 0) throw new Error('empty fragment after "."');
     if (stack.length) throw new Error('unbalanced (');
     if (Object.keys(open).length) throw new Error('unclosed ring digit');
     if (!atoms.length) throw new Error('no atoms');
+    /* explicit hydrogens such as [H]C(F)(Cl)Br or [2H]: the editor keeps hydrogens implicit, so a terminal H atom is folded
+       into its neighbour (its slot in the neighbour list becomes the implicit-H marker -1, so @ / @@ still reads correctly) */
+    (function () {
+      const deg = atoms.map(() => 0); bonds.forEach(b => { deg[b.a]++; deg[b.b]++; });
+      const gone = atoms.map((a, i) => a.el === 'H' && !a.charge && deg[i] === 1);
+      bonds.forEach(b => { if (gone[b.a] && gone[b.b]) { gone[b.a] = false; gone[b.b] = false; } });      // H-H stays
+      if (!gone.some(Boolean)) return;
+      bonds.forEach(b => {
+        if (gone[b.a] || gone[b.b]) {
+          const h = gone[b.a] ? b.a : b.b, o = h === b.a ? b.b : b.a;
+          nbo[o] = nbo[o].map(x => x === h ? -1 : x);
+          if (atoms[o].br) atoms[o].h++;
+        }
+      });
+      const map = atoms.map(() => -1); let m = 0; atoms.forEach((a, i) => { if (!gone[i]) map[i] = m++; });
+      const na = [], nn = [], nb = [];
+      atoms.forEach((a, i) => { if (!gone[i]) { na.push(a); nn.push(nbo[i].map(x => x >= 0 ? map[x] : x)); } });
+      bonds.forEach(b => { if (!gone[b.a] && !gone[b.b]) { b.dfrom = map[b.dfrom]; b.a = map[b.a]; b.b = map[b.b]; nb.push(b); } });
+      atoms.length = 0; na.forEach(a => atoms.push(a)); bonds.length = 0; nb.forEach(b => bonds.push(b)); nbo.length = 0; nn.forEach(x => nbo.push(x));
+    })();
+    if (!atoms.length) throw new Error('no atoms');
+    // an aromatic bond is only a ring bond: between two separate aromatic rings (biphenyl, c1ccccc1c1ccccc1) it is single
+    (function () {
+      const adjB = atoms.map(() => []); bonds.forEach((b, k) => { adjB[b.a].push([b.b, k]); adjB[b.b].push([b.a, k]); });
+      bonds.forEach((b, k) => {
+        if (b.sy === ':' || (!b.sy && atoms[b.a].arom && atoms[b.b].arom)) {
+          const seen = new Set([b.a]), q = [b.a]; let ring = false;
+          for (let h = 0; h < q.length && !ring; h++) for (const [v, kk] of adjB[q[h]]) { if (kk === k || seen.has(v)) continue; if (v === b.b) { ring = true; break; } seen.add(v); q.push(v); }
+          b.inRing = ring;
+        }
+      });
+    })();
     bonds.forEach(b => {
-      b.order = b.sy === '=' ? 2 : b.sy === '#' ? 3 : b.sy === ':' ? 'ar' : b.sy ? 1 : (atoms[b.a].arom && atoms[b.b].arom ? 'ar' : 1);
+      b.order = b.sy === '=' ? 2 : b.sy === '#' ? 3 : b.sy === ':' ? (b.inRing ? 'ar' : 1) : b.sy ? 1 : (atoms[b.a].arom && atoms[b.b].arom && b.inRing ? 'ar' : 1);
     });
+    atoms.forEach((a, i) => { if (a.arom && !bonds.some(b => (b.a === i || b.b === i) && b.order === 'ar')) throw new Error('aromatic atom ' + a.el.toLowerCase() + ' is not in an aromatic ring'); });
     // kekulise aromatic bonds
     const nbr = atoms.map(() => []); bonds.forEach((b, k) => { nbr[b.a].push(k); nbr[b.b].push(k); });
     const total = i2 => nbr[i2].reduce((t, k) => t + (bonds[k].order === 'ar' ? 1 : bonds[k].order), 0);
@@ -88,6 +132,23 @@
     };
     if (!solve()) throw new Error('could not kekulise the aromatic rings');
     bonds.forEach((b, k) => { if (b.order === 'ar') b.order = dbl.has(k) ? 2 : 1; });
+    // neutral pentavalent N written as N(=O)=O / C[N](C)(C)=O: draw it charge-separated, N+ and O-, like PubChem does
+    atoms.forEach((a, i) => {
+      if (a.el !== 'N' || a.charge) return;
+      const inc = bonds.filter(b => b.a === i || b.b === i);
+      if (inc.reduce((t, b) => t + b.order, 0) !== 5) return;
+      const ob = inc.find(b => b.order === 2 && (() => { const o = atoms[b.a === i ? b.b : b.a]; return o.el === 'O' && !o.charge && bonds.filter(x => x.a === (b.a === i ? b.b : b.a) || x.b === (b.a === i ? b.b : b.a)).length === 1; })());
+      if (!ob) return;
+      ob.order = 1; atoms[ob.a === i ? ob.b : ob.a].charge = -1; a.charge = 1;
+    });
+    // valence check: refuse structures the editor would silently draw differently (wrong hydrogen counts, impossible atoms)
+    atoms.forEach((a, i) => {
+      const bos = nbr[i].reduce((t, k) => t + bonds[k].order, 0), vals = C.valences(a.el, a.charge);
+      const v = vals.find(x => x >= bos);
+      const name = a.br ? '[' + (a.arom ? a.el.toLowerCase() : a.el) + (a.h ? 'H' + (a.h > 1 ? a.h : '') : '') + (a.charge ? (a.charge > 0 ? '+' : '-') + (Math.abs(a.charge) > 1 ? Math.abs(a.charge) : '') : '') + ']' : a.el;
+      if (v === undefined) throw new Error(name + ' has too many bonds (' + bos + ') for its valence');
+      if (a.br && v - bos !== a.h) throw new Error(name + ' is written with ' + a.h + ' hydrogen' + (a.h === 1 ? '' : 's') + ' but the editor would give it ' + (v - bos) + ' (radicals and unusual charge states are not supported)');
+    });
     return { atoms, bonds, nbo };
   }
 
@@ -281,7 +342,47 @@
     return { atoms: m0.atoms.map(a => ({ el: a.el, charge: a.charge, x: a.x, y: a.y })), bonds: bonds.map(b => ({ a: b.a, b: b.b, order: b.order, stereo: 0 })) };
   }
 
-  function fromSMILES(str, BL) { const p = parse(str), lay = layout(p.atoms, p.bonds, BL || 40); assignWedges(p, lay); return lay; }
+  /* ------------------------------------------- double-bond geometry from / and \ marks
+     F/C=C/F is trans (E), F/C=C\\F is cis (Z). For every acyclic double bond that has a / or \ mark on both ends, the drawing is
+     mirrored across the double bond (the side of the molecule beyond atom B) whenever the layout came out with the wrong cis / trans. */
+  function applyDoubleBonds(p, lay) {
+    const n = lay.atoms.length, adj = lay.atoms.map(() => []);
+    lay.bonds.forEach((b, k) => { adj[b.a].push([b.b, k]); adj[b.b].push([b.a, k]); });
+    const inCycle = (a, b, k) => {                                  // is bond k (a-b) part of a ring?
+      const seen = new Set([a]), q = [a];
+      for (let h = 0; h < q.length; h++) for (const [v, kk] of adj[q[h]]) { if (kk === k || seen.has(v)) continue; if (v === b) return true; seen.add(v); q.push(v); }
+      return false;
+    };
+    const side = (X, k) => {                                         // +1 / -1 = the substituent on bond k lies "above" / "below" X
+      const b = p.bonds[k], s = b.a === X ? b.b : b.a;
+      return b.dfrom === X ? (b.dsym === '/' ? 1 : -1) : (b.dsym === '/' ? -1 : 1);
+    };
+    const mark = X => { for (const [v, k] of adj[X]) if (p.bonds[k].dsym && p.bonds[k].order === 1) return { v, k }; return null; };
+    let applied = 0;
+    lay.bonds.forEach((bd, kb) => {
+      if (bd.order !== 2) return;
+      const A = bd.a, B = bd.b;
+      const mA = (() => { for (const [v, k] of adj[A]) if (k !== kb && p.bonds[k].dsym && p.bonds[k].order === 1) return { v, k }; return null; })();
+      const mB = (() => { for (const [v, k] of adj[B]) if (k !== kb && p.bonds[k].dsym && p.bonds[k].order === 1) return { v, k }; return null; })();
+      if (!mA || !mB || inCycle(A, B, kb)) return;
+      const wantCis = side(A, mA.k) === side(B, mB.k);
+      const ax = lay.atoms[B].x - lay.atoms[A].x, ay = lay.atoms[B].y - lay.atoms[A].y;
+      const cr = (v, O) => ax * (lay.atoms[v].y - lay.atoms[O].y) - ay * (lay.atoms[v].x - lay.atoms[O].x);
+      const isCis = (cr(mA.v, A) > 0) === (cr(mB.v, B) > 0);
+      if (isCis === wantCis) return;
+      const comp = new Set([B]), q = [B];                             // everything beyond B
+      for (let h = 0; h < q.length; h++) for (const [v, k] of adj[q[h]]) { if (k === kb || comp.has(v)) continue; comp.add(v); q.push(v); }
+      const L = Math.hypot(ax, ay) || 1, ux = ax / L, uy = ay / L, A0 = lay.atoms[A];
+      comp.forEach(i => {
+        const a = lay.atoms[i], dx = a.x - A0.x, dy = a.y - A0.y, along = dx * ux + dy * uy;
+        a.x = A0.x + 2 * along * ux - dx; a.y = A0.y + 2 * along * uy - dy;      // mirror image across the line through A and B
+      });
+      applied++;
+    });
+    return applied;
+  }
+
+  function fromSMILES(str, BL) { const p = parse(str), lay = layout(p.atoms, p.bonds, BL || 40); applyDoubleBonds(p, lay); assignWedges(p, lay); return lay; }
 
   /* ----------------------------------------------------------- export */
   function toSMILES(mol) {

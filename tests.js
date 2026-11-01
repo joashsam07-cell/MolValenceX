@@ -1,13 +1,21 @@
-/* tests.js — automated checks for MolValenceX.   Run:  node tests.js
-   Put it in the same folder as chem.js and smiles.js. No installs needed (Node 14+).
+/* tests.js — automated checks for MolValenceX.   Run it in the browser (tests.html) or with Node.
+   Browser: open tests.html (same folder as chem.js and smiles.js) - no install needed.
+   Node:    node tests.js  (optional, same folder).
    Add a new line to a table below every time you find a bug, so it can never come back silently. */
-const C = require('./chem.js'); require('./smiles.js');
+(function () {
+const isNode = typeof require === 'function' && typeof module !== 'undefined';
+if (isNode) { require('./chem.js'); require('./smiles.js'); }
+const C = isNode ? require('./chem.js') : window.Chem;
+if (!C || !C.fromSMILES) { throw new Error('chem.js and smiles.js must be loaded before tests.js'); }
+const secs = []; let cur = null;
+const out = s => { console.log(s); if (typeof window !== 'undefined' && window.__testOut) window.__testOut(s); };
 
 let pass = 0, fail = 0, known = 0;
 function check(name, ok, detail, knownBug) {
-  if (ok) { pass++; return; }
-  if (knownBug) { known++; console.log('  KNOWN  ' + name + (detail ? '  -> ' + detail : '')); return; }
-  fail++; console.log('  FAIL   ' + name + (detail ? '  -> ' + detail : ''));
+  if (!cur) { cur = { name: '(start)', pass: 0, fail: 0, known: 0 }; secs.push(cur); }
+  if (ok) { pass++; cur.pass++; return; }
+  if (knownBug) { known++; cur.known++; out('  KNOWN  ' + name + (detail ? '  -> ' + detail : '')); return; }
+  fail++; cur.fail++; out('  FAIL   ' + name + (detail ? '  -> ' + detail : ''));
 }
 // SMILES -> drawing -> analysis objects
 function load(smi) {
@@ -16,7 +24,7 @@ function load(smi) {
   const g = C.buildGraph(mol), rg = C.findRings(g);
   return { m, mol, g, rg };
 }
-const section = t => console.log('\n' + t);
+const section = t => { cur = { name: t, pass: 0, fail: 0, known: 0 }; secs.push(cur); out('\n' + t); };
 
 /* 1. formula, molar mass, degree of unsaturation — values from PubChem / textbooks */
 section('Formula, mass, DBE');
@@ -171,5 +179,7 @@ section('Importer: must be rejected');
   check('"' + s + '"', threw, 'was accepted');
 });
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed, ' + known + ' known issues');
-process.exit(fail ? 1 : 0);
+out('\n' + pass + ' passed, ' + fail + ' failed, ' + known + ' known issues');
+if (typeof window !== 'undefined' && window.__testDone) window.__testDone(secs, pass, fail, known);
+if (isNode) process.exit(fail ? 1 : 0);
+})();

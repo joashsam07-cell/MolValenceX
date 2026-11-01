@@ -3,6 +3,7 @@
 const C = window.Chem, $ = s => document.querySelector(s), BL = 40;
 const cv = $('#ed'), cx = cv.getContext('2d');
 let mol = { atoms: [], bonds: [] }, nid = 1, ver = 0, tool = 'bond', vr = { o: 1, s: 0 }, el = 'C';
+let view = { s: 1, x: 0, y: 0 };                                  // 2D zoom / offset: screen = world * s + (x, y)
 let sel = null, drag = null, an = null, ezr = null, rsr = null, hist = [], hi = -1, cache = null;
 
 /* ---------- state / history ---------- */
@@ -24,9 +25,10 @@ function size() {
 window.addEventListener('resize', () => { size(); size3(); });
 
 /* ---------- hit tests ---------- */
-const atomAt = p => mol.atoms.find(a => Math.hypot(a.x - p.x, a.y - p.y) < 14);
+const hitR = () => Math.max(10, Math.min(18, 14 / view.s));
+const atomAt = p => mol.atoms.find(a => Math.hypot(a.x - p.x, a.y - p.y) < hitR());
 function bondAt(p) {
-  let best = null, bd = 7;
+  let best = null, bd = Math.min(12, 7 / view.s);
   mol.bonds.forEach(b => {
     const A = atomById(b.a), B = atomById(b.b), dx = B.x - A.x, dy = B.y - A.y, l2 = dx * dx + dy * dy || 1;
     const t = Math.max(0, Math.min(1, ((p.x - A.x) * dx + (p.y - A.y) * dy) / l2));
@@ -60,7 +62,7 @@ function freeDir(s) {
   sa.forEach((a, i) => { const nx = i + 1 < sa.length ? sa[i + 1] : sa[0] + 2 * Math.PI, g = nx - a; if (g > bg) { bg = g; bt = a + g / 2; } });
   return pos(bt);
 }
-const P = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+const P = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / view.s, y: (e.clientY - r.top - view.y) / view.s }; };   // screen -> drawing coordinates
 function bondEnd(d, p) {
   const t = atomAt(p);
   if (t && t !== d.s) return { atom: t, x: t.x, y: t.y };
@@ -120,6 +122,11 @@ const cen = ids => { let x = 0, y = 0; ids.forEach(i => { x += mol.atoms[i].x; y
 function line(x1, y1, x2, y2, w) { cx.lineWidth = w || 2; cx.beginPath(); cx.moveTo(x1, y1); cx.lineTo(x2, y2); cx.stroke(); }
 function draw() {
   const W = cv.clientWidth, H = cv.clientHeight; cx.clearRect(0, 0, W, H);
+  cx.save(); cx.translate(view.x, view.y); cx.scale(view.s, view.s);
+  try { drawWorld(); } finally { cx.restore(); }
+}
+function drawWorld() {
+  const W = cv.clientWidth, H = cv.clientHeight;
   const { g, rg } = G(), A = mol.atoms;
   if (an) an.rings.forEach(r => {
     const col = { aromatic: '34,197,94', antiaromatic: '239,68,68', nonaromatic: '148,163,184' }[r.type];
@@ -186,6 +193,25 @@ function draw() {
   }
 }
 
+/* ---------- 2D zoom (+ / - buttons, mouse wheel, fit) ---------- */
+function zoomUI() { const e = $('#zpct'); if (e) e.textContent = Math.round(view.s * 100) + '%'; }
+function zoomBy(f, sx, sy) {
+  const W = cv.clientWidth, H = cv.clientHeight; if (sx === undefined) { sx = W / 2; sy = H / 2; }
+  const ns = Math.max(0.2, Math.min(6, view.s * f)), wx = (sx - view.x) / view.s, wy = (sy - view.y) / view.s;
+  view.x = sx - wx * ns; view.y = sy - wy * ns; view.s = ns; zoomUI(); draw();
+}
+function resetView() { view = { s: 1, x: 0, y: 0 }; zoomUI(); }
+function fitView() {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (!mol.atoms.length || !W || !H) { resetView(); draw(); return; }
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  mol.atoms.forEach(a => { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
+  const s = Math.max(0.2, Math.min(2.5, (W - 110) / Math.max(x1 - x0, 1), (H - 110) / Math.max(y1 - y0, 1)));
+  view = { s, x: W / 2 - s * (x0 + x1) / 2, y: H / 2 - s * (y0 + y1) / 2 }; zoomUI(); draw();
+}
+$('#zin').onclick = () => zoomBy(1.25); $('#zout').onclick = () => zoomBy(0.8); $('#zfit').onclick = fitView;
+cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); zoomBy(e.deltaY < 0 ? 1.1 : 0.91, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+
 /* ---------- info panel ---------- */
 function update() {
   const f = C.formula(mol);
@@ -236,7 +262,7 @@ const drawSmiles = s => {                                          // shared by 
   let r; try { r = C.fromSMILES(s, BL); } catch (er) { alert('Could not read SMILES: ' + er.message); return false; }
   const W = cv.clientWidth || 600, H = cv.clientHeight || 400; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   r.atoms.forEach(a => { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
-  const dx = W / 2 - (x0 + x1) / 2, dy = H / 2 - (y0 + y1) / 2; nid = 1; const ids = r.atoms.map(() => nid++);
+  resetView(); const dx = W / 2 - (x0 + x1) / 2, dy = H / 2 - (y0 + y1) / 2; nid = 1; const ids = r.atoms.map(() => nid++);
   mol = { atoms: r.atoms.map((a, i) => ({ id: ids[i], el: a.el, x: a.x + dx, y: a.y + dy, charge: a.charge || 0 })), bonds: r.bonds.map(b => ({ id: nid++, a: ids[b.a], b: ids[b.b], order: b.order, stereo: b.stereo || 0 })) };   // stereo 1 / 2 = wedge / dash, narrow end at a
   sel = null; commit();
   if (r.skippedStereo) alert('The structure was drawn, but the stereochemistry of ' + r.skippedStereo + ' centre' + (r.skippedStereo > 1 ? 's' : '') + ' could not be shown as a wedge / dash (unusual bonding or crowded geometry).');
@@ -362,7 +388,7 @@ function cen2(b, ids) { let x = 0, y = 0; ids.forEach(i => { x += b.pos(i).x; y 
 Object.keys(EX).forEach(k => { const o = document.createElement('option'); o.textContent = k; $('#examples').appendChild(o); });
 $('#examples').onchange = e => {
   if (!EX[e.target.value]) return;
-  nid = 1; const b = B(); EX[e.target.value](b); mol = b.m; sel = null; e.target.value = ''; commit();
+  nid = 1; const b = B(); EX[e.target.value](b); mol = b.m; sel = null; e.target.value = ''; resetView(); commit();
 };
 
 /* ---------- presets: added onto the drawing, the drawing is never replaced ---------- */
@@ -612,6 +638,114 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   size3(); dirty = true;
 });
 
+
+/* ---------- complete analysis + PDF report ---------- */
+/*PDF-BEGIN*/
+const PDF_MAP = { 'δ': 'd', 'Δ': 'Delta', 'π': 'pi', 'χ': 'chi', 'σ': 'sigma', 'μ': 'mu', '√': 'sqrt', '→': '->', '←': '<-', '⁺': '+', '⁻': '-', '−': '-', '–': '-', '—': '-', '≈': '~', '≤': '<=', '≥': '>=', '≠': '!=', '½': '1/2', '✓': 'OK', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...', '•': '*', '·': '.', '⁄': '/' };
+function pdfSafe(s) {
+  return String(s).replace(/[₀-₉]/g, c => String(c.charCodeAt(0) - 0x2080)).replace(/[⁰⁴-⁹]/g, c => ({ '⁰': '0', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9' })[c])
+    .replace(/[^\x00-\xff]/g, c => PDF_MAP[c] !== undefined ? PDF_MAP[c] : '?').replace(/[\x00-\x08\x0b-\x1f]/g, ' ');
+}
+function buildPdf(rep, img) {
+  const PW = 595, PH = 842, M = 42, LH = 12.5, pages = []; let cur = null, y = 0;
+  const newPage = () => { cur = { ops: [] }; pages.push(cur); y = PH - M; };
+  const esc = s => pdfSafe(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const txt = (s, x, yy, size, bold, rgb) => cur.ops.push((rgb || '0 g') + ' BT /F' + (bold ? 2 : 1) + ' ' + size + ' Tf ' + x + ' ' + yy.toFixed(1) + ' Td (' + esc(s) + ') Tj ET');
+  const wrap = (s, n) => { const out = []; String(s).split('\n').forEach(line => { const ind = (/^\s*/.exec(line)[0]).length; let w = line.trim().split(/\s+/), l = ' '.repeat(ind); if (!line.trim()) { out.push(''); return; } w.forEach(t => { if ((l + t).length > n && l.trim()) { out.push(l); l = ' '.repeat(ind) + t + ' '; } else l += t + ' '; }); out.push(l.replace(/\s+$/, '')); }); return out; };
+  const need = h => { if (y - h < M + 24) newPage(); };
+  newPage();
+  cur.ops.push('0.31 0.27 0.9 rg 0 ' + (PH - 74) + ' ' + PW + ' 74 re f');
+  txt('MolValenceX', M, PH - 36, 22, true, '1 g'); txt('Complete analysis report', M, PH - 56, 12, false, '1 g');
+  txt(rep.date, PW - M - 130, PH - 56, 9, false, '1 g'); y = PH - 74 - 22;
+  const kv = (k, v) => { need(LH); txt(k, M, y, 9.5, true); txt(v, M + 130, y, 9.5, false); y -= LH + 1; };
+  kv('Molecular formula', rep.formula); kv('Molar mass', rep.mass); kv('Degree of unsaturation', rep.dbe); kv('Atoms (heavy / H)', rep.counts);
+  if (rep.smiles) wrap('SMILES: ' + rep.smiles, 95).forEach((l, i) => { need(LH); txt(i ? '  ' + l.trim() : 'SMILES', M, y, 9.5, !i); if (i) { } y -= LH; });
+  y -= 6;
+  if (img) {
+    const w = Math.min(330, (PH - 2 * M) * img.w / img.h * 0.5), h = w * img.h / img.w, hh = Math.min(h, 300), ww = hh * img.w / img.h;
+    need(hh + 14); cur.ops.push('q ' + ww.toFixed(1) + ' 0 0 ' + hh.toFixed(1) + ' ' + M + ' ' + (y - hh).toFixed(1) + ' cm /Im1 Do Q');
+    cur.ops.push('0.8 G ' + M + ' ' + (y - hh).toFixed(1) + ' ' + ww.toFixed(1) + ' ' + hh.toFixed(1) + ' re S'); cur.usesImg = true; y -= hh + 14;
+  }
+  rep.parts.forEach((p, k) => {
+    need(40); y -= 6; cur.ops.push('0.93 0.94 0.99 rg ' + M + ' ' + (y - 4).toFixed(1) + ' ' + (PW - 2 * M) + ' 17 re f');
+    txt((k + 1) + '. ' + p.title, M + 6, y, 11, true, '0.2 0.17 0.6 rg'); y -= LH + 6;
+    wrap(p.text, 100).forEach(l => { need(LH); if (l) txt(l, M, y, 9, /^(Ring \d|Good|Partial|Poor|Dipole|Stereo|[A-Z][A-Za-z\/ ]{2,24}:?)$/.test(l.trim()) && false, '0.1 g'); y -= LH; });
+  });
+  y -= 8; need(30);
+  wrap('Disclaimer: This report is for educational purposes only and is not a reference for analytics. Values are predicted and may differ from reality. Generated by MolValenceX (joashsam07-cell.github.io/MolValenceX).', 110).forEach(l => { need(10); txt(l, M, y, 7.5, false, '0.4 g'); y -= 10; });
+  const N = pages.length; pages.forEach((p, i) => txt('MolValenceX complete analysis  -  page ' + (i + 1) + ' of ' + N, M, 24, 7.5, false, '0.5 g') || 0);
+  // ---- assemble the file (binary string: every char is one byte) ----
+  let out = '', offs = [], n = 0; const add = s => { out += s; };
+  const obj = (id, body) => { offs[id] = out.length; add(id + ' 0 obj\n' + body + '\nendobj\n'); };
+  add('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  const firstPage = 6; // ids: 1 catalog, 2 pages, 3 F1, 4 F2, 5 image, then (page, content) pairs
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, '<< /Type /Pages /Kids [' + pages.map((_, i) => (firstPage + 2 * i) + ' 0 R').join(' ') + '] /Count ' + N + ' >>');
+  obj(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  obj(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  if (img) obj(5, '<< /Type /XObject /Subtype /Image /Width ' + img.w + ' /Height ' + img.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.bin.length + ' >>\nstream\n' + img.bin + '\nendstream');
+  else obj(5, '<< >>');
+  pages.forEach((p, i) => {
+    const pid = firstPage + 2 * i, cid = pid + 1, body = p.ops.join('\n');
+    obj(pid, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PW + ' ' + PH + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << /Im1 5 0 R >> >> /Contents ' + cid + ' 0 R >>');
+    obj(cid, '<< /Length ' + body.length + ' >>\nstream\n' + body + '\nendstream');
+  });
+  const total = firstPage + 2 * N, xref = out.length;
+  add('xref\n0 ' + total + '\n0000000000 65535 f \n');
+  for (let i = 1; i < total; i++) add(String(offs[i]).padStart(10, '0') + ' 00000 n \n');
+  add('trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF');
+  const u8 = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) u8[i] = out.charCodeAt(i) & 255;
+  return u8;
+}
+/*PDF-END*/
+function htmlToText(html) {
+  const d = document.createElement('div'); d.innerHTML = html; const o = [];
+  const walk = n => {
+    if (n.nodeType === 3) { o.push(n.nodeValue.replace(/\s+/g, ' ')); return; }
+    if (n.nodeType !== 1) return;
+    const tag = n.tagName.toLowerCase(), cls = String(n.className || '');
+    if (tag === 'br') { o.push('\n'); return; }
+    if (tag === 'button' || tag === 'script' || tag === 'style') return;
+    if (/\bsol\b/.test(cls)) { o.push(' ' + n.textContent.replace(/\s+/g, ' ').trim() + ';'); return; }
+    if (/\brow\b/.test(cls)) { o.push('\n' + [].map.call(n.children, c => c.textContent.trim()).join(': ') + '\n'); return; }
+    const blk = /^(div|p|h\d|li|ul|ol|tr|small)$/.test(tag) || /\bchip\b/.test(cls);
+    if (blk) o.push('\n'); [].forEach.call(n.childNodes, walk); if (blk) o.push('\n');
+  };
+  walk(d);
+  return o.join('').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/;\s*(\n|$)/g, '$1').replace(/\n{3,}/g, '\n\n').replace(/[ ]{2,}/g, ' ').trim();
+}
+function snapshot() {
+  if (!cv.width || !cv.height) return null;
+  const keep = { s: view.s, x: view.x, y: view.y }; fitView();
+  const t = document.createElement('canvas'); t.width = cv.width; t.height = cv.height;
+  const c = t.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, t.width, t.height); c.drawImage(cv, 0, 0);
+  view = keep; zoomUI(); draw();
+  const url = t.toDataURL('image/jpeg', 0.92); return { w: t.width, h: t.height, bin: atob(url.split(',')[1]) };
+}
+let report = null;
+function downloadPdf() {
+  if (!report) return;
+  let img = null; try { img = snapshot(); } catch (e) { img = null; }
+  const bytes = buildPdf(report, img);
+  const u = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), a = document.createElement('a');
+  a.href = u; a.download = 'MolValenceX-' + (report.formula.replace(/[^A-Za-z0-9]/g, '') || 'report') + '.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+}
+$('#full').onclick = () => {
+  if (!mol.atoms.length) { $('#result').innerHTML = '<div class="warn">Draw a molecule first.</div>'; return; }
+  const f = C.formula(mol), list = [['Aromaticity (Hückel)', 'arom'], ['Dipole moment', 'dip'], ['E/Z, cis / trans', 'ez'], ['R/S and optical activity', 'rs'], ['Solubility (Hansen)', 'hsp']];
+  const parts = list.map(([title, id]) => {
+    let html; try { $('#' + id).click(); html = $('#result').innerHTML; } catch (e) { html = '<div class="warn">Could not be computed: ' + e.message + '</div>'; }
+    return { title, html, text: htmlToText(html) };
+  });
+  let smi = ''; try { smi = C.toSMILES(mol); } catch (e) { smi = ''; }
+  report = { date: new Date().toLocaleString(), formula: f.formula, mass: f.mass.toFixed(3) + ' g/mol', dbe: f.dbe === null ? '-' : String(f.dbe), counts: f.heavy + ' / ' + f.hydrogens, smiles: smi, parts };
+  $('#result').innerHTML = '<div class="card"><div class="lbl">Complete analysis</div><div class="big">' + f.formulaHtml + '</div>' +
+    (smi ? '<div class="hint" style="word-break:break-all">SMILES: ' + smi.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>' : '') + '</div>' +
+    '<button id="pdfbtn" class="primary" style="width:100%;margin:8px 0">⬇ Download PDF report</button>' +
+    parts.map((p, k) => '<div class="sect" style="color:#a5b4fc;font-size:12px">' + (k + 1) + '. ' + p.title + '</div>' + p.html).join('');
+  $('#pdfbtn').onclick = downloadPdf; draw();
+};
+
 /* ---------- guided tutorial ---------- */
 const TOUR_KEY = 'mvx-tour-seen';
 let tourMode = 'off', tourI = 0, tourSteps = [], tourDemo = false;
@@ -627,6 +761,7 @@ const STEPS = [
   { sel: '#pcname', t: 'Search PubChem by name', x: 'Type a compound name (for example <b>aspirin</b>, <b>caffeine</b> or an IUPAC name) and press <b>Enter</b>: the first match from PubChem is drawn with its stereochemistry, ready to edit or analyse. <b>Only the name you type is sent</b> to PubChem (NIH); your drawing never leaves your browser. Everything else in MolValenceX still works offline.' },
   { sel: '#impsmi', t: 'SMILES import / export', x: '<b>Import SMILES</b> draws a molecule from a pasted SMILES string (it replaces the current drawing; Undo brings yours back). <b>Export SMILES</b> gives the SMILES of what you drew and copies it. Tetrahedral stereo works both ways: <b>@ / @@</b> in an imported SMILES become wedge / dash bonds, and the wedge / dash bonds you draw (narrow end at the stereocentre) are written out as @ / @@. E/Z double-bond geometry is not converted yet.' },
   { sel: '#stage', t: 'Drawing canvas', x: 'Click empty space to place an atom. <b>Drag from an atom</b> to pull out a bond. Click an existing bond with a bond tool to change its order. Hydrogens are filled in automatically from valence, so draw only the heavy atoms. A red dashed ring marks an over-valent atom.' },
+  { sel: '#zoombox', t: 'Zoom the canvas', x: 'Use <b>+</b> and <b>&minus;</b> to zoom the 2D drawing in and out (works on phones too), or <b>scroll</b> the mouse wheel over the canvas. <b>&#x2922;</b> fits the whole molecule to the screen. The percentage shows the current zoom. Zooming only changes the view, never your molecule.' },
   { sel: '#bondtools', t: 'Bond & edit tools', x: '<b>⇱ Select</b>: drag an atom to move it, drag empty space to pan. <b>Single / double / triple</b> bonds (keys 1, 2, 3). <b>Wedge</b> = bond towards you, <b>dash</b> = away; they set stereochemistry and the 3D shape. <b>⌫</b> erases an atom or bond. <b>+ / −</b> add a formal charge to the atom you click.' },
   { sel: '#elements', t: 'Atoms', x: 'Choose the element for new atoms. Click the canvas to place one, drag from an atom to attach one, or click an existing atom to change its element. <b>More…</b> holds Li, Na, K, Mg, Ca, Al. Keys: C N O S P F H B I, L = Cl, R = Br.' },
   { sel: '#pre-chain', t: 'Presets: chains & rings', x: 'Presets are <b>added to</b> your drawing, never replacing it. <b>n-Alkane</b> and <b>Cycloalkane</b> use the number box beside them. Pick one, then click the canvas to place it, click an atom to attach it, or (rings) click a bond to fuse it. <b>Esc</b> stops placing.' },
@@ -638,6 +773,7 @@ const STEPS = [
   { sel: '#ez', tab: 'a', demoEx: 'cis-2-butene', run: () => $('#ez').click(), t: 'E / Z and cis / trans', x: 'Finds every acyclic <b>C=C, C=N or N=N</b> double bond, ranks the groups on each end by <b>CIP rules</b> and labels it <b>E</b> or <b>Z</b> (plus cis / trans for simple alkenes). The labels appear on the canvas. A cis-2-butene demo is drawn here.' },
   { sel: '#rs', tab: 'a', demoEx: 'D-glucose (Fischer)', run: () => $('#rs').click(), t: 'R / S and optical activity', x: 'Finds every <b>stereocentre</b> (sp³ atom with four different groups), ranks the groups by <b>CIP rules</b> and uses your <b>wedge / dash</b> bonds, or a <b>Fischer cross</b> (horizontal = towards you, vertical = away), to label it <b>R</b> or <b>S</b>. It then tells you if the molecule is <b>chiral (optically active)</b>, <b>meso</b> or has no stereocentre. D-glucose in Fischer form is drawn as a demo.' },
   { sel: '#hsp', tab: 'a', demoEx: 'Ethyl acetate', run: () => $('#hsp').click(), t: 'Solubility (Hansen)', x: 'Adds up <b>group contributions</b> to estimate the Hansen parameters <b>δD, δP, δH</b> (and the Hildebrand δT), then ranks 29 common solvents by their Hansen distance <b>Ra</b> and a size-aware Flory–Huggins test. Solvents close to the molecule are the likely ones to dissolve it. A rough <b>like-dissolves-like</b> guide; ethyl acetate is drawn as a demo.' },
+  { sel: '#full', tab: 'a', demoEx: 'Aspirin', run: () => $('#full').click(), t: 'Complete analysis + PDF', x: 'Runs <b>all five analyses at once</b> (aromaticity, dipole, E/Z, R/S and solubility) and lists them together. Then press <b>Download PDF report</b> to save a PDF with the structure picture, formula, mass, SMILES and every result. Aspirin is drawn as a demo.' },
   { sel: '#to3d', tab: 'd', demo: true, t: '3D view', x: '<b>Convert drawing to 3D</b> builds a 3D model from your 2D sketch. Wedge and dash bonds are used to set chirality.' },
   { sel: '.canvas-container-3d', tab: 'd', demo: true, run: () => $('#to3d').click(), t: '3D viewer', x: '<b>Drag</b> to rotate, <b>scroll</b> to zoom. The yellow arrow is the dipole moment (δ+ → δ−).' },
   { sel: '.row3', tab: 'd', t: 'Display options', x: 'Switch between <b>Ball &amp; stick</b>, <b>Sticks</b> and <b>Space-filling</b>; show or hide H, atom labels, auto-spin and the dipole arrow.' },
